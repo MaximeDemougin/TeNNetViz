@@ -4,6 +4,7 @@ import re
 import streamlit as st
 import pandas as pd
 import numpy as np
+import json
 
 project_path = re.sub(
     r"TeNNetViz.*", "TeNNetViz/", os.path.dirname(os.path.abspath(__file__))
@@ -184,5 +185,40 @@ def prepare_bets_data(user_id: int):
     grouped_bets["Marge attendue"] = grouped_bets["Marge attendue"].round(2)
     grouped_bets.sort_values(by="Date", ascending=True, inplace=True)
     grouped_bets.reset_index(drop=True, inplace=True)
+    grouped_bets["Cumulative Gains"] = grouped_bets["Gains net"].cumsum()
 
     return grouped_bets
+
+
+def prep_candle_data(user_id: int):
+    """
+    Prepares data for candlestick chart visualization grouped by day
+    and uses cumulative net gains.
+    """
+    bets_data = prepare_bets_data(user_id)
+    bets_data["Date"] = pd.to_datetime(bets_data["Date"]).dt.date
+
+    candle_data = (
+        bets_data.groupby("Date")
+        .agg(
+            open=("Cumulative Gains", "first"),
+            high=("Cumulative Gains", "max"),
+            low=("Cumulative Gains", "min"),
+            close=("Cumulative Gains", "last"),
+        )
+        .reset_index()
+    )
+
+    # rename columns
+    candle_data.rename(columns={"Date": "time"}, inplace=True)
+
+    # round values
+    for col in ["open", "high", "low", "close"]:
+        candle_data[col] = candle_data[col].round(2)
+
+    # convert time to string format YYYY-MM-DD
+    candle_data["time"] = candle_data["time"].astype(str)
+
+    # directly return JSON string
+    candle_data_list = candle_data.to_dict(orient="records")
+    return candle_data_list

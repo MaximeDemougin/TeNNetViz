@@ -1376,6 +1376,21 @@ snowflake = ["snowflake-connector-python (>=3.3.0) ; python_version < \"3.12\"",
 sql = ["SQLAlchemy (>=2.0.0)"]
 
 [[package]]
+name = "streamlit-lightweight-charts"
+version = "0.7.20"
+description = "Wrapper for TradingView `lightweight-charts`"
+optional = false
+python-versions = ">=3.6"
+groups = ["main"]
+files = [
+    {file = "streamlit-lightweight-charts-0.7.20.tar.gz", hash = "sha256:1341348b8286c23975246b391956295c70cb315c06eaec9a51b31e5bcf774ef5"},
+    {file = "streamlit_lightweight_charts-0.7.20-py3-none-any.whl", hash = "sha256:61e0edc669dac626176a16da173414f577161f28107a3475762640d5665c7fe4"},
+]
+
+[package.dependencies]
+streamlit = ">=0.62"
+
+[[package]]
 name = "tenacity"
 version = "9.1.2"
 description = "Retry code until it succeeds"
@@ -1536,4 +1551,4 @@ watchmedo = ["PyYAML (>=3.10)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "66b12414d70c0f7b54aad29a8cf4ef01aecc0405987ba3573dd3527e4f7d2fd0"
+content-hash = "ee6c2b60c25c01f2d03ac12627e9206414a1b48514ae10e1bb726e3957fdec9d"
