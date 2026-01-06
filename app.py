@@ -39,7 +39,7 @@ dashboard = st.Page(
 if st.session_state.logged_in:
     pg = st.navigation(
         {
-            f"Welcome {st.session_state.username} ({str(load_bankroll(st.session_state.ID_USER))}€)": [
+            f"{st.session_state.username} ({str(load_bankroll(st.session_state.ID_USER))}€)": [
                 logout_page
             ],
             "Reports": [dashboard],
