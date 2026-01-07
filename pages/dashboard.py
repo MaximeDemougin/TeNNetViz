@@ -1,5 +1,6 @@
 import streamlit as st
 import plotly.express as px
+from data import prepare_bets_data
 
 st.set_page_config(layout="wide")
 
