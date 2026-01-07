@@ -1,6 +1,4 @@
 # ruff: noqa: E402
-
-
 from sqlalchemy import create_engine
 import pandas as pd
 from tqdm import tqdm
