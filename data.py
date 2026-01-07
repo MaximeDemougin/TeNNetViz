@@ -79,7 +79,9 @@ def load_bets(user_id: int):
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         WHERE match_settled in (1,2) and score != 'W/O'"""
     bets_data = read_sql_query(BDD, query_bets)
-    bets_data = bets_data[bets_data["ID_USER"] == user_id]
+    bets_data = bets_data[
+        (bets_data["ID_USER"] == user_id) & (bets_data["tourney_date"] >= "2026-01-01")
+    ]
     bets_data.sort_values(by="tourney_date", ascending=True, inplace=True)
     bets_data.reset_index(drop=True, inplace=True)
     return bets_data
