@@ -20,7 +20,7 @@ st.title("Les résultats TeNNet", text_alignment="center")
 if st.session_state.get("logged_in", False):
     bets_data = prepare_bets_data(st.session_state["ID_USER"])
     if not bets_data.empty:
-        col1, col2 = st.columns([7, 5])
+        col1, col2, col3 = st.columns([7, 1, 4])
         with col1:
             st.markdown("### Évolution des gains nets", text_alignment="center")
 
@@ -40,56 +40,60 @@ if st.session_state.get("logged_in", False):
             )
 
             fig.update_traces(
-                line_color="#32b296", line_width=2, marker=dict(size=8, color="#32b296")
+                line_color="#32b296", line_width=2, marker=dict(size=1, color="#32b296")
             )
+            # add trace cumulative marge in white
+            bets_data_reset["Cumulative_Marge"] = bets_data_reset[
+                "Marge attendue"
+            ].cumsum()
+            # fig.add_trace(
+            #     px.line(
+            #         bets_data_reset,
+            #         x="Match_Num",
+            #         y="Cumulative_Marge",
+            #         markers=False,
+            #     ).data[0]
+            # )
 
             fig.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)",
                 font=dict(color="#d1d4dc"),
-                hovermode="closest",
+                hovermode="x",
+                # make markers invisible until hover
+                # hoverlabel=dict(bgcolor="white", font_size=12, font_family="Segoe UI"),
             )
 
-            # Capture click events (this also displays the chart)
-            selected = plotly_events(
+            event_dict = st.plotly_chart(
                 fig,
-                click_event=True,
-                hover_event=False,
-                select_event=False,
-                key="chart1",
+                height="content",
+                selection_mode="points",
+                on_select="rerun",
             )
+            print(event_dict)
+            selected = event_dict["selection"]["points"]
 
-        with col2:
+        with col3:
             st.markdown("### Info Match", text_alignment="center")
+            print(selected)
 
             # Get selected match or default to last
             if selected and len(selected) > 0:
-                idx = selected[0]["pointIndex"]
+                idx = selected[0]["point_index"]
                 match = bets_data.iloc[idx]
             else:
                 match = bets_data.iloc[-1]
 
-            # Simple card display
-            st.markdown(f"**{match['Match']}**")
-            st.write(f"📅 {match['Date']}")
-            st.write(f"🎾 {match['player_bet']}")
-            st.write(f"🏆 {match['Compétition']} - {match['Level']}")
-            st.write(f"🎯 {match['Round']} | 🏟️ {match['Surface']}")
-            st.divider()
-            st.write(f"💰 Mise: {match['Mise']:.2f}€")
-            st.write(f"📊 Cote: {match['Cote']:.3f}")
-            st.write(f"🔮 Prédiction: {match['Prédiction']:.3f}")
-            st.divider()
-            gain_color = "green" if match["Gains net"] > 0 else "red"
-            st.markdown(f"**Gains net:** :{gain_color}[{match['Gains net']:+.2f}€]")
-            st.write(f"📈 Cumul: {match['Cumulative Gains']:.2f}€")
+            gain_color = "#32b296" if match["Gains net"] > 0 else "#e04e4e"
 
+            html = f"""<div style='background:rgba(25,28,35,0.85);border-radius:16px;padding:22px 26px;border:1px solid rgba(255,255,255,0.06);box-shadow:0 4px 12px rgba(0,0,0,0.3);backdrop-filter:blur(6px);font-family:Segoe UI,sans-serif;color:#e0e0e0;text-align:center;line-height:1.6;'><h3 style='margin:0 0 16px 0;font-size:22px;color:#32b296;'>{match["Match"]}</h3><div style='display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:center;'><div><p><b>📅 Date :</b><br>{match["Date"]}</p></div><div><p><b>🎾 Joueur :</b><br>{match["player_bet"]}</p></div><div><p><b>🏆 Compétition :</b><br>{match["Compétition"]} – {match["Level"]}</p></div><div><p><b>🏟️ Surface :</b><br>{match["Surface"]}</p></div><div><p><b>🎯 Round :</b><br>{match["Round"]}</p></div><div><p><b>💰 Mise :</b><br>{match["Mise"]:.2f}€</p></div><div><p><b>📊 Cote :</b><br>{match["Cote"]:.3f}</p></div><div><p><b>🔮 Prédiction :</b><br>{match["Prédiction"]:.3f}</p></div></div><hr style='opacity:0.15;margin:18px 0;'><p><b>💸 Gains net :</b> <span style='color:{gain_color};font-weight:600;'>{match["Gains net"]:+.2f}€</span></p><p><b>📈 Cumul :</b> {match["Cumulative Gains"]:.2f}€</p></div>"""
+
+            st.markdown(html, unsafe_allow_html=True)
         st.markdown("### Détail des paris", text_alignment="center")
         st.dataframe(
             bets_data.sort_values(by="Date", ascending=False).drop(
                 columns=["Cumulative Gains"]
             ),
-            use_container_width=True,
         )
 
     else:
