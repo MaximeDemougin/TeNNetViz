@@ -1,8 +1,5 @@
 import streamlit as st
-from streamlit_lightweight_charts import renderLightweightCharts
-from data import prepare_bets_data, prep_candle_data
 import plotly.express as px
-from streamlit_plotly_events import plotly_events
 
 st.set_page_config(layout="wide")
 
