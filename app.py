@@ -8,6 +8,7 @@ project_path = re.sub(
     r"TeNNetViz.*", "TeNNetViz/", os.path.dirname(os.path.abspath(__file__))
 )
 os.chdir(project_path)
+st.session_state["project_path"] = project_path
 sys.path.append(project_path)
 from utils import _sidebar_logo_bottom_center
 from data import load_bankroll

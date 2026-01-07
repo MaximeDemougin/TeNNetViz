@@ -3,19 +3,17 @@ import streamlit as st
 import os
 import re
 
-project_path = re.sub(
-    r"TeNNetViz.*", "TeNNetViz/", os.path.dirname(os.path.abspath(__file__))
-)
-os.chdir(project_path)
+
+os.chdir(st.session_state["project_path"])
 import sys
 
-sys.path.append(project_path)
+sys.path.append(st.session_state["project_path"])
 from login_ui.utils import check_usr_pass
 
 from pathlib import Path
 import base64
 
-logo_path = Path(project_path) / "logo_TeNNet.png"
+logo_path = Path(st.session_state["project_path"]) / "logo_TeNNet.png"
 logo_base64 = base64.b64encode(logo_path.read_bytes()).decode()
 
 

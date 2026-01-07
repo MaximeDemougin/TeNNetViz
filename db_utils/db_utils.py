@@ -9,15 +9,13 @@ import locale
 
 
 import os
-import re
+import streamlit as st
 
-project_path = re.sub(
-    r"TeNNetViz.*", "TeNNetViz/", os.path.dirname(os.path.abspath(__file__))
-)
-os.chdir(project_path)
+
+os.chdir(st.session_state["project_path"])
 import sys
 
-sys.path.append(project_path)
+sys.path.append(st.session_state["project_path"])
 from db_utils.globals import DB_URL
 
 locale.setlocale(locale.LC_ALL, "")

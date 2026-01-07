@@ -1,7 +1,6 @@
 import streamlit as st
 from streamlit_lightweight_charts import renderLightweightCharts
 from data import prepare_bets_data, prep_candle_data
-import json
 
 st.set_page_config(layout="wide")
 

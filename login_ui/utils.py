@@ -1,16 +1,12 @@
 # ruff: noqa: E402
 import hashlib
-
+import streamlit as st
 import os
-import re
 
-project_path = re.sub(
-    r"TeNNetViz.*", "TeNNetViz/", os.path.dirname(os.path.abspath(__file__))
-)
-os.chdir(project_path)
+os.chdir(st.session_state["project_path"])
 import sys
 
-sys.path.append(project_path)
+sys.path.append(st.session_state["project_path"])
 from db_utils.db_utils import read_sql_query
 
 BDD = "FootNet"
