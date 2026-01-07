@@ -18,6 +18,8 @@ import base64
 logo_path = Path(project_path) / "logo_TeNNet.png"
 logo_base64 = base64.b64encode(logo_path.read_bytes()).decode()
 
+
+st.set_page_config(layout="centered")
 st.markdown("## Login to  TeNNet", text_alignment="center")
 st.markdown("###", text_alignment="center")
 del_login = st.empty()

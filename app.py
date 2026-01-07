@@ -8,7 +8,6 @@ project_path = re.sub(
     r"TeNNetViz.*", "TeNNetViz/", os.path.dirname(os.path.abspath(__file__))
 )
 os.chdir(project_path)
-
 sys.path.append(project_path)
 from utils import _sidebar_logo_bottom_center
 from data import load_bankroll
@@ -29,6 +28,7 @@ def logout():
     st.rerun()
 
 
+print(os.getcwd())
 login_page = st.Page("pages/login.py", title="Log in", icon=":material/login:")
 logout_page = st.Page(logout, title="Log out", icon=":material/logout:")
 
