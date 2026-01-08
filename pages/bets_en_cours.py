@@ -55,10 +55,6 @@ def display_bet_cards(bets_df, cols_per_row=3):
                             <span style='font-weight: 600; color: #32b296;'>{bet["player_bet"]}</span>
                         </div>
                         <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
-                            <span style='color: #9ca3af; font-size: 14px;'>🏆 Compétition</span>
-                            <span style='font-size: 13px;'>{bet["Compétition"]}</span>
-                        </div>
-                        <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
                             <span style='color: #9ca3af; font-size: 14px;'>🏟️ Surface</span>
                             <span>{bet["Surface"]}</span>
                         </div>
