@@ -3,6 +3,45 @@ from data import prepare_bets_data
 
 st.set_page_config(layout="wide")
 
+# Style global pour le fond de page
+st.markdown(
+    """
+    <style>
+        /* Fond de page avec gradient élégant */
+        [data-testid="stAppViewContainer"] {
+            background: linear-gradient(180deg, 
+                rgba(15,15,20,1) 0%, 
+                rgba(20,20,25,1) 50%, 
+                rgba(15,15,20,1) 100%);
+        }
+        
+        /* Fond de la sidebar si présente */
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, 
+                rgba(20,20,25,0.95) 0%, 
+                rgba(15,15,20,0.95) 100%);
+        }
+        
+        /* Header */
+        [data-testid="stHeader"] {
+            background: transparent;
+        }
+        
+        /* Titre principal */
+        h1 {
+            color: #e0e0e0 !important;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        /* Sous-titres */
+        h2, h3 {
+            color: #d1d5db !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.title("Paris en cours", text_alignment="center")
 
 
@@ -37,12 +76,18 @@ def display_bet_cards(bets_df, cols_per_row=3):
                 card_html = f"""
                 <style>
                     .bet-card {{
-                        background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
+                        background: linear-gradient(135deg, 
+                            rgba(30,30,35,0.95) 0%, 
+                            rgba(20,20,25,0.98) 50%, 
+                            rgba(30,30,35,0.95) 100%);
                         border-radius: 16px;
                         padding: 20px;
-                        border: 1px solid rgba(50,178,150,0.2);
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
-                        backdrop-filter: blur(6px);
+                        border: 1px solid rgba(80,80,90,0.2);
+                        box-shadow: 
+                            0 4px 12px rgba(0,0,0,0.4), 
+                            0 2px 4px rgba(0,0,0,0.3),
+                            inset 0 1px 0 rgba(255,255,255,0.05);
+                        backdrop-filter: blur(10px);
                         font-family: Segoe UI, sans-serif;
                         color: #e0e0e0;
                         margin-bottom: 20px;
@@ -51,10 +96,32 @@ def display_bet_cards(bets_df, cols_per_row=3):
                         position: relative;
                         text-decoration: none !important;
                         display: block;
+                        overflow: hidden;
+                    }}
+                    .bet-card::before {{
+                        content: '';
+                        position: absolute;
+                        top: 0;
+                        left: -100%;
+                        width: 100%;
+                        height: 100%;
+                        background: linear-gradient(90deg, 
+                            transparent, 
+                            rgba(255,255,255,0.05), 
+                            transparent);
+                        transition: left 0.5s;
+                    }}
+                    .bet-card:hover::before {{
+                        left: 100%;
                     }}
                     .bet-card:hover {{
-                        transform: translateY(-2px) scale(1.01);
-                        border-color: rgba(50,178,150,0.5);
+                        transform: translateY(-4px) scale(1.02);
+                        border-color: rgba(100,100,110,0.4);
+                        box-shadow: 
+                            0 8px 24px rgba(0,0,0,0.5), 
+                            0 4px 8px rgba(0,0,0,0.4),
+                            0 0 0 1px rgba(100,100,110,0.1),
+                            inset 0 1px 0 rgba(255,255,255,0.1);
                         text-decoration: none !important;
                     }}
                     .bet-card * {{
@@ -65,7 +132,7 @@ def display_bet_cards(bets_df, cols_per_row=3):
                     <h3 style='
                         margin: 0 0 16px 0;
                         font-size: 18px;
-                        color: #32b296;
+                        color: #9ca3af;
                         text-align: center;
                         border-bottom: 1px solid rgba(255,255,255,0.1);
                         padding-bottom: 12px;
@@ -157,64 +224,86 @@ if st.session_state.get("logged_in", False):
             """
         <style>
             .metric-card {
-                background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
+                background: linear-gradient(135deg, 
+                    rgba(30,30,35,0.95) 0%, 
+                    rgba(20,20,25,0.98) 50%, 
+                    rgba(30,30,35,0.95) 100%);
                 border-radius: 12px;
                 padding: 16px;
                 box-shadow: 
-                    6px 6px 12px rgba(0,0,0,0.4),
-                    4px 4px 8px rgba(0,0,0,0.3),
-                    2px 2px 4px rgba(0,0,0,0.2),
-                    inset -1px -1px 2px rgba(0,0,0,0.5);
+                    0 4px 12px rgba(0,0,0,0.4),
+                    0 2px 4px rgba(0,0,0,0.3),
+                    inset 0 1px 0 rgba(255,255,255,0.05);
                 transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 cursor: pointer;
                 position: relative;
                 overflow: hidden;
             }
+            .metric-card::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg, 
+                    transparent, 
+                    rgba(255,255,255,0.05), 
+                    transparent);
+                transition: left 0.5s;
+            }
+            .metric-card:hover::before {
+                left: 100%;
+            }
             .metric-card:hover {
-                transform: translateY(-6px) translateX(-2px) scale(1.01);
+                transform: translateY(-4px) scale(1.02);
             }
             
             /* Effet ombre verte pour Total Paris */
             .metric-card.card-green:hover {
                 box-shadow: 
-                    10px 10px 20px rgba(0,0,0,0.5),
-                    8px 8px 16px rgba(0,0,0,0.4),
+                    0 8px 24px rgba(0,0,0,0.5),
+                    0 4px 8px rgba(0,0,0,0.4),
                     0 0 20px rgba(50,178,150,0.6),
                     0 0 40px rgba(50,178,150,0.3),
-                    inset 0 0 20px rgba(50,178,150,0.1);
+                    0 0 0 1px rgba(50,178,150,0.2),
+                    inset 0 1px 0 rgba(255,255,255,0.1);
                 border-color: rgba(50,178,150,0.8) !important;
             }
             
             /* Effet ombre jaune pour Mises totales */
             .metric-card.card-yellow:hover {
                 box-shadow: 
-                    10px 10px 20px rgba(0,0,0,0.5),
-                    8px 8px 16px rgba(0,0,0,0.4),
+                    0 8px 24px rgba(0,0,0,0.5),
+                    0 4px 8px rgba(0,0,0,0.4),
                     0 0 20px rgba(251,191,36,0.6),
                     0 0 40px rgba(251,191,36,0.3),
-                    inset 0 0 20px rgba(251,191,36,0.1);
+                    0 0 0 1px rgba(251,191,36,0.2),
+                    inset 0 1px 0 rgba(255,255,255,0.1);
                 border-color: rgba(251,191,36,0.8) !important;
             }
             
             /* Effet ombre verte pour Gains potentiels */
             .metric-card.card-gains:hover {
                 box-shadow: 
-                    10px 10px 20px rgba(0,0,0,0.5),
-                    8px 8px 16px rgba(0,0,0,0.4),
+                    0 8px 24px rgba(0,0,0,0.5),
+                    0 4px 8px rgba(0,0,0,0.4),
                     0 0 20px rgba(50,178,150,0.6),
                     0 0 40px rgba(50,178,150,0.3),
-                    inset 0 0 20px rgba(50,178,150,0.1);
+                    0 0 0 1px rgba(50,178,150,0.2),
+                    inset 0 1px 0 rgba(255,255,255,0.1);
                 border-color: rgba(50,178,150,0.8) !important;
             }
             
             /* Effet ombre orange pour Marges attendues */
             .metric-card.card-purple:hover {
                 box-shadow: 
-                    10px 10px 20px rgba(0,0,0,0.5),
-                    8px 8px 16px rgba(0,0,0,0.4),
+                    0 8px 24px rgba(0,0,0,0.5),
+                    0 4px 8px rgba(0,0,0,0.4),
                     0 0 20px rgba(249,115,22,0.6),
                     0 0 40px rgba(249,115,22,0.3),
-                    inset 0 0 20px rgba(249,115,22,0.1);
+                    0 0 0 1px rgba(249,115,22,0.2),
+                    inset 0 1px 0 rgba(255,255,255,0.1);
                 border-color: rgba(249,115,22,0.8) !important;
             }
             
@@ -309,16 +398,44 @@ if st.session_state.get("logged_in", False):
             """
         <style>
             .comp-card {
-                background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
+                background: linear-gradient(135deg, 
+                    rgba(30,30,35,0.95) 0%, 
+                    rgba(20,20,25,0.98) 50%, 
+                    rgba(30,30,35,0.95) 100%);
                 border-radius: 12px;
                 padding: 16px;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                box-shadow: 
+                    0 4px 12px rgba(0,0,0,0.4),
+                    0 2px 4px rgba(0,0,0,0.3),
+                    inset 0 1px 0 rgba(255,255,255,0.05);
                 transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 cursor: pointer;
+                position: relative;
+                overflow: hidden;
+            }
+            .comp-card::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg, 
+                    transparent, 
+                    rgba(255,255,255,0.05), 
+                    transparent);
+                transition: left 0.5s;
+            }
+            .comp-card:not(.disabled):hover::before {
+                left: 100%;
             }
             .comp-card:not(.disabled):hover {
-                transform: translateY(-2px) scale(1.01);
-                box-shadow: 0 16px 32px rgba(0,0,0,0.4), 0 8px 16px rgba(0,0,0,0.2);
+                transform: translateY(-4px) scale(1.02);
+                box-shadow: 
+                    0 8px 24px rgba(0,0,0,0.5),
+                    0 4px 8px rgba(0,0,0,0.4),
+                    0 0 0 1px rgba(100,100,110,0.1),
+                    inset 0 1px 0 rgba(255,255,255,0.1);
             }
             .comp-card.disabled {
                 cursor: default;
