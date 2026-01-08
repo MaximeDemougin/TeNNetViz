@@ -18,7 +18,7 @@ dependencies = [
     "streamlit-lightweight-charts (>=0.7.20,<0.8.0)",
     "plotly (>=6.5.0,<7.0.0)",
     "streamlit-shadcn-ui (>=0.1.19,<0.2.0)",
-    "streamlit-plotly-events (>=0.0.6,<0.0.7)"
+    "streamlit-plotly-events (>=0.0.6,<0.0.7)",
 ]
 
 

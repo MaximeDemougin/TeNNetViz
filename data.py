@@ -96,6 +96,33 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         bets_data = load_bets(user_id)
     else:
         bets_data = load_inplay_bets(user_id)
+
+    # Defensive: if no data returned, provide an empty dataframe with expected schema
+    if bets_data is None or bets_data.empty:
+        cols = [
+            "ID_MATCH",
+            "Match",
+            "Date",
+            "Compétition",
+            "Level",
+            "Round",
+            "Surface",
+            "Mise",
+            "Cote",
+            "Prédiction",
+            "Gains net",
+            "Marge attendue",
+        ]
+        empty_df = pd.DataFrame(columns=cols)
+        # Ensure numeric columns exist with float dtype
+        for num_col in ["Mise", "Cote", "Prédiction", "Gains net", "Marge attendue"]:
+            empty_df[num_col] = empty_df.get(num_col, pd.Series(dtype=float)).astype(
+                float
+            )
+        # Add cumulative column expected by prep_candle_data
+        empty_df["Cumulative Gains"] = empty_df["Gains net"].cumsum()
+        return empty_df
+
     bets_data["Match"] = bets_data["winner_name"] + " - " + bets_data["loser_name"]
     bets_data["real_odds"] = (1 / (bets_data["odds"] - 1)) * 0.97 + 1
 
@@ -149,6 +176,71 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             "marge",
         ]
     ].copy()
+    prepared_bets["compet"] = prepared_bets["compet"].str.title()
+
+    # Extract time (Horaire) from tourney_date for display in match table
+    try:
+        prepared_bets["tourney_date"] = pd.to_datetime(
+            prepared_bets["tourney_date"], errors="coerce"
+        )
+        prepared_bets["Horaire"] = prepared_bets["tourney_date"].dt.strftime("%H:%M")
+    except Exception:
+        prepared_bets["Horaire"] = ""
+
+    # Map surface names to French and normalize capitalization
+    try:
+        prepared_bets["surface"] = prepared_bets["surface"].astype(str).str.title()
+        surface_map = {
+            "Hard": "Dur",
+            "Grass": "Gazon",
+            "Clay": "Terre battue",
+        }
+        prepared_bets["surface"] = prepared_bets["surface"].map(
+            lambda v: surface_map.get(v, v)
+        )
+    except Exception:
+        pass
+
+    # Map round codes to French labels
+    try:
+        round_map = {
+            "F": "Finale",
+            "SF": "Demi-finale",
+            "QF": "Quart de finale",
+            "R16": "8emes de finale",
+            "R32": "16emes de finale",
+            "R64": "32emes de finale",
+            "R128": "64emes de finale",
+            "RR": "Round Robin",
+        }
+        # Normalize and map; keep original value if not found
+        prepared_bets["round"] = prepared_bets["round"].astype(str).str.upper()
+        prepared_bets["round"] = prepared_bets["round"].map(
+            lambda r: round_map.get(r, r)
+        )
+    except Exception:
+        pass
+
+    # Map tourney level codes to descriptive labels
+    try:
+        level_map = {
+            "C": "Challenger",
+            "A": "ATP 250/500",
+            "G": "Grand Chelem",
+            "M": "Masters 1000",
+            "I": "WTA 250",
+            "P": "WTA 500",
+            "PM": "WTA 1000",
+        }
+        prepared_bets["tourney_level"] = (
+            prepared_bets["tourney_level"].astype(str).str.upper()
+        )
+        prepared_bets["tourney_level"] = prepared_bets["tourney_level"].map(
+            lambda lvl: level_map.get(lvl, lvl)
+        )
+    except Exception:
+        pass
+
     prepared_bets["real_odds"] = prepared_bets["real_odds"].round(3)
     prepared_bets["cote_pred"] = prepared_bets["cote_pred"].round(3)
     prepared_bets["marge"] = prepared_bets["marge"].round(2)

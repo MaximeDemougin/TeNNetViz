@@ -1,6 +1,10 @@
 import streamlit as st
-import plotly.express as px
+import pandas as pd
 from data import prepare_bets_data
+from pages.components.metrics import render_metrics
+from pages.components.charts import render_cumulative_chart
+from pages.components.match_card import render_match_info
+from pages.components.grouped_table import render_grouped_table
 
 st.set_page_config(
     layout="wide", page_icon="logo_TeNNet.png", page_title="Dashboard TeNNet"
@@ -53,274 +57,293 @@ chartOptions = {
     }
 }
 
-st.title("Les résultats TeNNet", text_alignment="center")
-# You can add more dashboard components here as needed.
+st.title("🏆 Les résultats TeNNet", text_alignment="center")
+
+# Cache bets data once per user in session_state to avoid repeated loads during reruns
+if st.session_state.get("logged_in", False):
+    user_id = st.session_state.get("ID_USER")
+    # If cached data missing or belongs to a different user, (re)load it
+    if (
+        "bets_data_cached" not in st.session_state
+        or st.session_state.get("bets_data_user_id") != user_id
+    ):
+        try:
+            st.session_state["bets_data_cached"] = prepare_bets_data(
+                user_id, finished=True
+            )
+            st.session_state["bets_data_user_id"] = user_id
+        except Exception:
+            st.session_state["bets_data_cached"] = pd.DataFrame()
+
 # For example, display user-specific data if logged in
 if st.session_state.get("logged_in", False):
-    bets_data = prepare_bets_data(st.session_state["ID_USER"], finished=True)
-    if not bets_data.empty:
-        # Add CSS for metric cards
-        st.markdown(
-            """
-        <style>
-            .metric-card {
-                background: linear-gradient(135deg, 
-                    rgba(30,30,35,0.95) 0%, 
-                    rgba(20,20,25,0.98) 50%, 
-                    rgba(30,30,35,0.95) 100%);
-                border-radius: 12px;
-                padding: 16px;
-                box-shadow: 
-                    0 4px 12px rgba(0,0,0,0.4),
-                    0 2px 4px rgba(0,0,0,0.3),
-                    inset 0 1px 0 rgba(255,255,255,0.05);
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                cursor: pointer;
-                position: relative;
-                overflow: hidden;
-            }
-            .metric-card::before {
-                content: '';
-                position: absolute;
-                top: 0;
-                left: -100%;
-                width: 100%;
-                height: 100%;
-                background: linear-gradient(90deg, 
-                    transparent, 
-                    rgba(255,255,255,0.05), 
-                    transparent);
-                transition: left 0.5s;
-            }
-            .metric-card:hover::before {
-                left: 100%;
-            }
-            .metric-card:hover {
-                transform: translateY(-4px) scale(1.02);
-            }
-            
-            /* Effet ombre verte pour Total Paris */
-            .metric-card.card-green:hover {
-                box-shadow: 
-                    0 8px 24px rgba(0,0,0,0.5),
-                    0 4px 8px rgba(0,0,0,0.4),
-                    0 0 20px rgba(50,178,150,0.6),
-                    0 0 40px rgba(50,178,150,0.3),
-                    0 0 0 1px rgba(50,178,150,0.2),
-                    inset 0 1px 0 rgba(255,255,255,0.1);
-                border-color: rgba(50,178,150,0.8) !important;
-            }
-            
-            /* Effet ombre jaune pour Mises totales */
-            .metric-card.card-yellow:hover {
-                box-shadow: 
-                    0 8px 24px rgba(0,0,0,0.5),
-                    0 4px 8px rgba(0,0,0,0.4),
-                    0 0 20px rgba(251,191,36,0.6),
-                    0 0 40px rgba(251,191,36,0.3),
-                    0 0 0 1px rgba(251,191,36,0.2),
-                    inset 0 1px 0 rgba(255,255,255,0.1);
-                border-color: rgba(251,191,36,0.8) !important;
-            }
-            
-            /* Effet ombre verte pour Gains positifs */
-            .metric-card.card-gains-positive:hover {
-                box-shadow: 
-                    0 8px 24px rgba(0,0,0,0.5),
-                    0 4px 8px rgba(0,0,0,0.4),
-                    0 0 20px rgba(50,178,150,0.6),
-                    0 0 40px rgba(50,178,150,0.3),
-                    0 0 0 1px rgba(50,178,150,0.2),
-                    inset 0 1px 0 rgba(255,255,255,0.1);
-                border-color: rgba(50,178,150,0.8) !important;
-            }
-            
-            /* Effet ombre rouge pour Gains négatifs */
-            .metric-card.card-gains-negative:hover {
-                box-shadow: 
-                    0 8px 24px rgba(0,0,0,0.5),
-                    0 4px 8px rgba(0,0,0,0.4),
-                    0 0 20px rgba(224,78,78,0.6),
-                    0 0 40px rgba(224,78,78,0.3),
-                    0 0 0 1px rgba(224,78,78,0.2),
-                    inset 0 1px 0 rgba(255,255,255,0.1);
-                border-color: rgba(224,78,78,0.8) !important;
-            }
-            
-            /* Effet ombre bleu pour Marges attendues */
-            .metric-card.card-blue:hover {
-                box-shadow: 
-                    0 8px 24px rgba(0,0,0,0.5),
-                    0 4px 8px rgba(0,0,0,0.4),
-                    0 0 20px rgba(59,130,246,0.6),
-                    0 0 40px rgba(59,130,246,0.3),
-                    0 0 0 1px rgba(59,130,246,0.2),
-                    inset 0 1px 0 rgba(255,255,255,0.1);
-                border-color: rgba(59,130,246,0.8) !important;
-            }
-        </style>
-        """,
-            unsafe_allow_html=True,
+    # Use cached data if available (loaded once per user above)
+    bets_data = st.session_state.get("bets_data_cached", pd.DataFrame())
+
+    # --- Sidebar filters: competition, cote range, date range ---
+    try:
+        bets_original = bets_data.copy()
+    except Exception:
+        bets_original = pd.DataFrame()
+
+    if not bets_original.empty:
+        # Ensure Date is datetime
+        try:
+            bets_original["Date"] = pd.to_datetime(
+                bets_original["Date"], errors="coerce"
+            )
+        except Exception:
+            pass
+
+        # Competition filter
+        try:
+            comps = sorted(bets_original["Compétition"].dropna().unique().tolist())
+        except Exception:
+            comps = []
+        comp_selected = st.sidebar.multiselect(
+            "Filtrer - Compétition",
+            options=comps,
+            default=comps if len(comps) > 0 else None,
         )
 
-        # Calculate statistics
-        total_bets = len(bets_data)
-        total_mises = bets_data["Mise"].sum()
-        total_gains = bets_data["Gains net"].sum()
-        total_marges = bets_data["Marge attendue"].sum()
-        wins = len(bets_data[bets_data["Gains net"] > 0])
-        win_rate = (wins / total_bets * 100) if total_bets > 0 else 0
-        roi = (total_gains / total_mises * 100) if total_mises > 0 else 0
-        marge_percentage = (total_marges / total_mises * 100) if total_mises > 0 else 0
+        # Cote double slider
+        try:
+            cote_vals = pd.to_numeric(bets_original["Cote"], errors="coerce")
+            cote_min = float(cote_vals.min()) if cote_vals.notna().any() else 0.0
+            cote_max = float(cote_vals.max()) if cote_vals.notna().any() else 10.0
+        except Exception:
+            cote_min, cote_max = 0.0, 10.0
+        cote_range = st.sidebar.slider(
+            "Filtrer - Cote",
+            min_value=float(cote_min),
+            max_value=float(cote_max),
+            value=(float(cote_min), float(cote_max)),
+            step=0.01,
+        )
 
-        # Display metric cards
-        st.markdown("### 📊 Vue d'ensemble")
-        col1, col2, col3, col4 = st.columns(4)
+        # Date range picker
+        try:
+            min_date = bets_original["Date"].min().date()
+            max_date = bets_original["Date"].max().date()
+        except Exception:
+            import datetime
 
-        with col1:
-            st.markdown(
-                f"""
-            <div class='metric-card card-green' style='border: 1px solid rgba(50,178,150,0.2);'>
-                <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px;'>📝 Total Paris</div>
-                <div style='font-size: 32px; font-weight: 700; color: #32b296;'>{total_bets:,}</div>
-                <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>{wins} gagnés</div>
-            </div>
-            """.replace(
-                    ",", " "
-                ),
-                unsafe_allow_html=True,
-            )
+            min_date = datetime.date(2000, 1, 1)
+            max_date = datetime.date.today()
 
-        with col2:
-            st.markdown(
-                f"""
-            <div class='metric-card card-yellow' style='border: 1px solid rgba(251,191,36,0.2);'>
-                <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px;'>💰 Mises totales</div>
-                <div style='font-size: 32px; font-weight: 700; color: #fbbf24;'>{total_mises:,.0f}€</div>
-                <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>investis</div>
-            </div>
-            """.replace(
-                    ",", " "
-                ),
-                unsafe_allow_html=True,
-            )
+        date_range = st.sidebar.date_input(
+            "Filtrer - Période",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date,
+        )
 
-        with col3:
-            gain_color = "#32b296" if total_gains > 0 else "#e04e4e"
-            gain_card_class = (
-                "card-gains-positive" if total_gains > 0 else "card-gains-negative"
-            )
-            border_color = (
-                "rgba(50,178,150,0.2)" if total_gains > 0 else "rgba(224,78,78,0.2)"
-            )
-            st.markdown(
-                f"""
-            <div class='metric-card {gain_card_class}' style='border: 1px solid {border_color};'>
-                <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px;'>💸 Gains nets</div>
-                <div style='font-size: 32px; font-weight: 700; color: {gain_color};'>{total_gains:+,.0f}€</div>
-                <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>ROI: {roi:+.1f}%</div>
-            </div>
-            """.replace(
-                    ",", " "
-                ),
-                unsafe_allow_html=True,
-            )
+        # Apply filters
+        filtered = bets_original.copy()
+        try:
+            if comp_selected and len(comp_selected) > 0:
+                filtered = filtered[filtered["Compétition"].isin(comp_selected)]
+        except Exception:
+            pass
 
-        with col4:
-            marge_color = "#3b82f6" if total_marges > 0 else "#e04e4e"
-            st.markdown(
-                f"""
-            <div class='metric-card card-blue' style='border: 1px solid rgba(59,130,246,0.2);'>
-                <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px;'>📈 Marges attendues</div>
-                <div style='font-size: 32px; font-weight: 700; color: {marge_color};'>{total_marges:+,.0f}€</div>
-                <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>{marge_percentage:+.1f}% des mises</div>
-            </div>
-            """.replace(
-                    ",", " "
-                ),
-                unsafe_allow_html=True,
-            )
+        try:
+            cmin, cmax = cote_range
+            filtered["Cote"] = pd.to_numeric(filtered["Cote"], errors="coerce")
+            try:
+                # use inclusive param if available
+                filtered = filtered[
+                    filtered["Cote"].between(float(cmin), float(cmax), inclusive="both")
+                ]
+            except TypeError:
+                # fallback for pandas versions without 'inclusive' keyword
+                filtered = filtered[
+                    (filtered["Cote"] >= float(cmin))
+                    & (filtered["Cote"] <= float(cmax))
+                ]
+        except Exception:
+            pass
 
-        st.divider()
-
-        col1, col2, col3 = st.columns([7, 1, 4])
-        with col1:
-            # Préparer les données pour le graphique
-            bets_data_reset = bets_data.reset_index(drop=True)
-            bets_data_reset["Match_Num"] = range(len(bets_data_reset))
-
-            fig = px.line(
-                bets_data_reset,
-                x="Match_Num",
-                y="Cumulative Gains",
-                markers=True,
-                labels={
-                    "Match_Num": "Match #",
-                    "Cumulative Gains": "Gains nets cumulés",
-                },
-            )
-
-            fig.update_traces(
-                line_color="#32b296", line_width=2, marker=dict(size=1, color="#32b296")
-            )
-            # add trace cumulative marge in white
-            bets_data_reset["Cumulative_Marge"] = bets_data_reset[
-                "Marge attendue"
-            ].cumsum()
-            # fig.add_trace(
-            #     px.line(
-            #         bets_data_reset,
-            #         x="Match_Num",
-            #         y="Cumulative_Marge",
-            #         markers=False,
-            #     ).data[0]
-            # )
-
-            fig.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#d1d4dc"),
-                hovermode="x",
-                # make markers invisible until hover
-                # hoverlabel=dict(bgcolor="white", font_size=12, font_family="Segoe UI"),
-            )
-
-            # Affichage dans une carte
-            with st.container(border=True):
-                st.markdown("### 📈 Évolution des gains nets", text_alignment="center")
-                event_dict = st.plotly_chart(
-                    fig,
-                    height="content",
-                    selection_mode="points",
-                    on_select="rerun",
-                    use_container_width=True,
-                )
-            selected = event_dict["selection"]["points"]
-
-        with col3:
-            st.markdown("### Info Match", text_alignment="center")
-            print(selected)
-
-            # Get selected match or default to last
-            if selected and len(selected) > 0:
-                idx = selected[0]["point_index"]
-                match = bets_data.iloc[idx]
+        try:
+            # date_range may be a single date or a tuple
+            if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+                start_date, end_date = date_range
             else:
-                match = bets_data.iloc[-1]
+                start_date = date_range
+                end_date = date_range
+            # convert to datetimes for comparison
+            start_dt = pd.to_datetime(start_date)
+            end_dt = (
+                pd.to_datetime(end_date)
+                + pd.Timedelta(days=1)
+                - pd.Timedelta(seconds=1)
+            )
+            filtered = filtered[
+                (filtered["Date"] >= start_dt) & (filtered["Date"] <= end_dt)
+            ]
+        except Exception:
+            pass
 
-            gain_color = "#32b296" if match["Gains net"] > 0 else "#e04e4e"
+        # Preserve original index for ID display in match card
+        try:
+            filtered = filtered.copy()
+            filtered["_orig_index"] = filtered.index
+        except Exception:
+            pass
 
-            html = f"""<div style='background:rgba(25,28,35,0.85);border-radius:16px;padding:22px 26px;border:1px solid rgba(255,255,255,0.06);box-shadow:0 4px 12px rgba(0,0,0,0.3);backdrop-filter:blur(6px);font-family:Segoe UI,sans-serif;color:#e0e0e0;text-align:center;line-height:1.6;'><h3 style='margin:0 0 16px 0;font-size:22px;color:#32b296;'>{match["Match"]}</h3><div style='display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:center;'><div><p><b>📅 Date :</b><br>{match["Date"]}</p></div><div><p><b>🎾 Joueur :</b><br>{match["player_bet"]}</p></div><div><p><b>🏆 Compétition :</b><br>{match["Compétition"]} – {match["Level"]}</p></div><div><p><b>🏟️ Surface :</b><br>{match["Surface"]}</p></div><div><p><b>🎯 Round :</b><br>{match["Round"]}</p></div><div><p><b>💰 Mise :</b><br>{match["Mise"]:.2f}€</p></div><div><p><b>📊 Cote :</b><br>{match["Cote"]:.3f}</p></div><div><p><b>🔮 Prédiction :</b><br>{match["Prédiction"]:.3f}</p></div></div><hr style='opacity:0.15;margin:18px 0;'><p><b>💸 Gains net :</b> <span style='color:{gain_color};font-weight:600;'>{match["Gains net"]:+.2f}€</span></p><p><b>📈 Cumul :</b> {match["Cumulative Gains"]:.2f}€</p></div>"""
+        # Sort by Date to compute cumulative sums in chronological order
+        try:
+            filtered = filtered.sort_values(by="Date", ascending=True)
+        except Exception:
+            pass
 
-            st.markdown(html, unsafe_allow_html=True)
-        st.markdown("### Détail des paris", text_alignment="center")
-        st.dataframe(
-            bets_data.sort_values(by="Date", ascending=False).drop(
-                columns=["Cumulative Gains"]
-            ),
-        )
+        # Recompute cumulative gains column based on filtered order
+        try:
+            if "Gains net" in filtered.columns:
+                filtered["Cumulative Gains"] = filtered["Gains net"].cumsum()
+        except Exception:
+            pass
 
-    else:
-        st.write("No bets found.")
-else:
-    st.write("Please log in to see your dashboard.")
+        # Set index back to original identifier so components that display ID keep it
+        try:
+            filtered = filtered.set_index("_orig_index")
+        except Exception:
+            pass
+
+        bets_data = filtered
+
+    # Add CSS for metric cards
+    st.markdown(
+        """
+    <style>
+        .metric-card {
+            background: linear-gradient(135deg, 
+                rgba(30,30,35,0.95) 0%, 
+                rgba(20,20,25,0.98) 50%, 
+                rgba(30,30,35,0.95) 100%);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 
+                0 4px 12px rgba(0,0,0,0.4),
+                0 2px 4px rgba(0,0,0,0.3),
+                inset 0 1px 0 rgba(255,255,255,0.05);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, 
+                transparent, 
+                rgba(255,255,255,0.05), 
+                transparent);
+            transition: left 0.5s;
+        }
+        .metric-card:hover::before {
+            left: 100%;
+        }
+        .metric-card:hover {
+            transform: translateY(-4px) scale(1.02);
+        }
+        
+        /* Effet ombre verte pour Total Paris */
+        .metric-card.card-green:hover {
+            box-shadow: 
+                0 8px 24px rgba(0,0,0,0.5),
+                0 4px 8px rgba(0,0,0,0.4),
+                0 0 20px rgba(50,178,150,0.6),
+                0 0 40px rgba(50,178,150,0.3),
+                0 0 0 1px rgba(50,178,150,0.2),
+                inset 0 1px 0 rgba(255,255,255,0.1);
+            border-color: rgba(50,178,150,0.8) !important;
+        }
+        
+        /* Effet ombre jaune pour Mises totales */
+        .metric-card.card-yellow:hover {
+            box-shadow: 
+                0 8px 24px rgba(0,0,0,0.5),
+                0 4px 8px rgba(0,0,0,0.4),
+                0 0 20px rgba(251,191,36,0.6),
+                0 0 40px rgba(251,191,36,0.3),
+                0 0 0 1px rgba(251,191,36,0.2),
+                inset 0 1px 0 rgba(255,255,255,0.1);
+            border-color: rgba(251,191,36,0.8) !important;
+        }
+        
+        /* Effet ombre verte pour Gains positifs */
+        .metric-card.card-gains-positive:hover {
+            box-shadow: 
+                0 8px 24px rgba(0,0,0,0.5),
+                0 4px 8px rgba(0,0,0,0.4),
+                0 0 20px rgba(50,178,150,0.6),
+                0 0 40px rgba(50,178,150,0.3),
+                0 0 0 1px rgba(50,178,150,0.2),
+                inset 0 1px 0 rgba(255,255,255,0.1);
+            border-color: rgba(50,178,150,0.8) !important;
+        }
+        
+        /* Effet ombre rouge pour Gains négatifs */
+        .metric-card.card-gains-negative:hover {
+            box-shadow: 
+                0 8px 24px rgba(0,0,0,0.5),
+                0 4px 8px rgba(0,0,0,0.4),
+                0 0 20px rgba(224,78,78,0.6),
+                0 0 40px rgba(224,78,78,0.3),
+                0 0 0 1px rgba(224,78,78,0.2),
+                inset 0 1px 0 rgba(255,255,255,0.1);
+            border-color: rgba(224,78,78,0.8) !important;
+        }
+        
+        /* Effet ombre bleu pour Marges attendues */
+        .metric-card.card-blue:hover {
+            box-shadow: 
+                0 8px 24px rgba(0,0,0,0.5),
+                0 4px 8px rgba(0,0,0,0.4),
+                0 0 20px rgba(59,130,246,0.6),
+                0 0 40px rgba(59,130,246,0.3),
+                0 0 0 1px rgba(59,130,246,0.2),
+                inset 0 1px 0 rgba(255,255,255,0.1);
+            border-color: rgba(59,130,246,0.8) !important;
+        }
+    </style>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    # Calculate statistics
+    total_bets = len(bets_data)
+    total_mises = bets_data["Mise"].sum()
+    total_gains = bets_data["Gains net"].sum()
+    total_marges = bets_data["Marge attendue"].sum()
+    wins = len(bets_data[bets_data["Gains net"] > 0])
+    win_rate = (wins / total_bets * 100) if total_bets > 0 else 0
+    roi = (total_gains / total_mises * 100) if total_mises > 0 else 0
+    marge_percentage = (total_marges / total_mises * 100) if total_mises > 0 else 0
+
+    # Display metric cards
+    # Render metrics via separate component (add top-level title)
+    st.markdown("### 📊 Vue d'ensemble", unsafe_allow_html=True)
+    metrics = render_metrics(bets_data)
+
+    st.divider()
+
+    col1, col2, col3 = st.columns([7, 1, 4])
+    with col1:
+        # Section title and cumulative chart component
+        st.markdown("### 📈 Évolution des gains nets")
+        selected = render_cumulative_chart(bets_data)
+
+    with col3:
+        # Section title and match info
+        st.markdown("### 🎾 Info Match")
+        render_match_info(bets_data, selected)
+    st.divider()
+
+    # Grouped table and charts component (section title)
+    st.markdown("### 🧾 Détail des paris")
+    render_grouped_table(bets_data)

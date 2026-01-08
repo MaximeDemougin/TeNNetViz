@@ -10,15 +10,25 @@ project_path = re.sub(
 os.chdir(project_path)
 st.session_state["project_path"] = project_path
 sys.path.append(project_path)
-from utils import _sidebar_logo_bottom_center
 from data import load_bankroll
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
+    st.session_state.ID_USER = None
 
 # Ensure a username key exists in session state
 if "username" not in st.session_state:
     st.session_state.username = ""
+    # Cache bankroll once per user as well
+if (
+    "bankroll_cached" not in st.session_state
+    or st.session_state.get("bankroll_cached_user_id") != st.session_state.ID_USER
+):
+    try:
+        st.session_state["bankroll_cached"] = load_bankroll(st.session_state.ID_USER)
+        st.session_state["bankroll_cached_user_id"] = st.session_state.ID_USER
+    except Exception:
+        st.session_state["bankroll_cached"] = None
 
 
 def logout():
@@ -29,7 +39,6 @@ def logout():
     st.rerun()
 
 
-print(os.getcwd())
 login_page = st.Page("pages/login.py", title="Log in", icon=":material/login:")
 logout_page = st.Page(logout, title="Log out", icon=":material/logout:")
 
@@ -43,7 +52,7 @@ bets_en_cours = st.Page(
 if st.session_state.logged_in:
     pg = st.navigation(
         {
-            f"{st.session_state.username} ({str(load_bankroll(st.session_state.ID_USER))}€)": [
+            f"{st.session_state.username} ({str(st.session_state.bankroll_cached)}€)": [
                 logout_page
             ],
             "Reports": [dashboard, bets_en_cours],
