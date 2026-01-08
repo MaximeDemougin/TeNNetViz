@@ -229,7 +229,6 @@ if st.session_state.get("logged_in", False):
             }
             .metric-card:hover::after {
                 opacity: 1;
-            }
             .metric-card::before {
                 content: '';
                 position: absolute;
@@ -286,13 +285,13 @@ if st.session_state.get("logged_in", False):
             )
 
         with col4:
-            marge_color = "#32b296" if total_marges > 0 else "#e04e4e"
+            marge_color = "#6e32a7" if total_marges > 0 else "#e04e4e"
             st.markdown(
                 f"""
             <div class='metric-card card-purple' style='border: 1px solid rgba(147,51,234,0.2);'>
                 <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px;'>📈 Marges attendues</div>
                 <div style='font-size: 32px; font-weight: 700; color: {marge_color};'>{total_marges:+.2f}€</div>
-                <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>espérées</div>
+                <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>attendus</div>
             </div>
             """,
                 unsafe_allow_html=True,
