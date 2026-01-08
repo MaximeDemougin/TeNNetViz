@@ -98,16 +98,17 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         bets_data = load_inplay_bets(user_id)
     bets_data["Match"] = bets_data["winner_name"] + " - " + bets_data["loser_name"]
     bets_data["real_odds"] = (1 / (bets_data["odds"] - 1)) * 0.97 + 1
-    bets_data["cote_pred"] = np.where(
-        (bets_data["match_settled"] == 1) & (bets_data["bet"] == 1)
-        | (bets_data["match_settled"] == 2) & (bets_data["bet"] == 0),
-        bets_data["winner_pred"],
-        bets_data["loser_pred"],
-    )
-    bets_data["player_bet"] = np.where(
-        bets_data["bet"] == 1, bets_data["winner_name"], bets_data["loser_name"]
-    )
+
     if finished:
+        bets_data["cote_pred"] = np.where(
+            (bets_data["match_settled"] == 1) & (bets_data["bet"] == 1)
+            | (bets_data["match_settled"] == 2) & (bets_data["bet"] == 0),
+            bets_data["winner_pred"],
+            bets_data["loser_pred"],
+        )
+        bets_data["player_bet"] = np.where(
+            bets_data["bet"] == 1, bets_data["winner_name"], bets_data["loser_name"]
+        )
         bets_data["win"] = np.where(
             (bets_data["match_settled"] == 1) & (bets_data["bet"] == 1)
             | (bets_data["match_settled"] == 2) & (bets_data["bet"] == 0),
@@ -121,6 +122,12 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         )
         bets_data["net_unit"] = bets_data["net_gain"] / bets_data["stake"]
     else:
+        bets_data["cote_pred"] = np.where(
+            bets_data["bet"] == 1, bets_data["winner_pred"], bets_data["loser_pred"]
+        )
+        bets_data["player_bet"] = np.where(
+            bets_data["bet"] == 1, bets_data["winner_name"], bets_data["loser_name"]
+        )
         bets_data["net_gain"] = 0.0
         bets_data["net_unit"] = 0.0
     bets_data["marge_unit"] = bets_data["real_odds"] / bets_data["cote_pred"] - 1
