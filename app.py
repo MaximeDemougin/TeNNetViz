@@ -10,7 +10,7 @@ project_path = re.sub(
 os.chdir(project_path)
 st.session_state["project_path"] = project_path
 sys.path.append(project_path)
-from data import load_bankroll
+from data import load_bankroll, prepare_bets_data
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -36,6 +36,8 @@ def logout():
     st.session_state.username = ""
     st.session_state.ID_USER = None
     st.session_state.bankroll = None
+    # clear cached in-play badge when logging out
+    st.session_state.pop("cached_total_inplay", None)
     st.rerun()
 
 
@@ -50,17 +52,35 @@ bets_en_cours = st.Page(
 )
 
 if st.session_state.logged_in:
+    # compute in-play count to show next to the menu label, but cache it so it doesn't update on every rerun
+    cached = st.session_state.get("cached_total_inplay", None)
+    if cached is None:
+        try:
+            bets_data = prepare_bets_data(st.session_state["ID_USER"], finished=False)
+            cached = len(bets_data) if bets_data is not None else 0
+        except Exception:
+            cached = 0
+        st.session_state["cached_total_inplay"] = cached
+
+    total_inplay = st.session_state.get("cached_total_inplay", 0)
+
     pg = st.navigation(
         {
             f"{st.session_state.username} ({str(st.session_state.bankroll_cached)}€)": [
                 logout_page
             ],
-            "Reports": [dashboard, bets_en_cours],
+            "Navigation": [
+                dashboard,
+                st.Page(
+                    "pages/bets_en_cours.py",
+                    title=f"Paris en cours 🟢{total_inplay}",
+                    icon=":material/sports_tennis:",
+                ),
+            ],
         }
     )
 else:
     pg = st.navigation([login_page])
-
 
 # call helper to insert the logo at the bottom center of the sidebar
 # _sidebar_logo_bottom_center()

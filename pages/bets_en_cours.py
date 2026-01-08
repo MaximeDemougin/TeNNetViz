@@ -206,9 +206,9 @@ if st.session_state.get("logged_in", False):
         )
 
         # Separate bets by competition type
-        atp_bets = bets_data[bets_data["Compétition"] == "atp"]
-        wta_bets = bets_data[bets_data["Compétition"] == "wta"]
-        doubles_bets = bets_data[bets_data["Compétition"] == "doubles"]
+        atp_bets = bets_data[bets_data["Compétition"] == "Atp"]
+        wta_bets = bets_data[bets_data["Compétition"] == "Wta"]
+        doubles_bets = bets_data[bets_data["Compétition"] == "Doubles"]
 
         # Calculate totals
         total_mises = bets_data["Mise"].sum()
