@@ -23,20 +23,38 @@ def display_bet_cards(bets_df, cols_per_row=3):
                 # Calculate potential gain
                 potential_gain = bet["Mise"] * bet["Cote"] - bet["Mise"]
 
-                # Create card HTML
+                # Build Flashscore URL
+                flashscore_url = f"https://www.flashscore.fr/match/{bet['ID_MATCH']}"
+
+                # Create card HTML with hover effects and clickable link
                 card_html = f"""
-                <div style='
-                    background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
-                    border-radius: 16px;
-                    padding: 20px;
-                    border: 1px solid rgba(50,178,150,0.2);
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                    backdrop-filter: blur(6px);
-                    font-family: Segoe UI, sans-serif;
-                    color: #e0e0e0;
-                    margin-bottom: 20px;
-                    transition: transform 0.2s;
-                '>
+                <style>
+                    .bet-card {{
+                        background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
+                        border-radius: 16px;
+                        padding: 20px;
+                        border: 1px solid rgba(50,178,150,0.2);
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
+                        backdrop-filter: blur(6px);
+                        font-family: Segoe UI, sans-serif;
+                        color: #e0e0e0;
+                        margin-bottom: 20px;
+                        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                        cursor: pointer;
+                        position: relative;
+                        text-decoration: none !important;
+                        display: block;
+                    }}
+                    .bet-card:hover {{
+                        transform: translateY(-2px) scale(1.01);
+                        border-color: rgba(50,178,150,0.5);
+                        text-decoration: none !important;
+                    }}
+                    .bet-card * {{
+                        text-decoration: none !important;
+                    }}
+                </style>
+                <a href='{flashscore_url}' target='_blank' class='bet-card' style='color: inherit; text-decoration: none !important;'>
                     <h3 style='
                         margin: 0 0 16px 0;
                         font-size: 18px;
@@ -96,7 +114,16 @@ def display_bet_cards(bets_df, cols_per_row=3):
                             color: #32b296;
                         '>{potential_gain:+.2f}€</div>
                     </div>
-                </div>
+                    <div style='
+                        margin-top: 12px;
+                        text-align: center;
+                        font-size: 12px;
+                        color: #9ca3af;
+                        opacity: 0.7;
+                    '>
+                        🔗 Cliquez pour voir sur Flashscore
+                    </div>
+                </a>
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
 
@@ -123,14 +150,108 @@ if st.session_state.get("logged_in", False):
         # Display summary statistics with cards
         st.markdown("### 📊 Vue d'ensemble")
 
+        # Add global CSS for metric cards
+        st.markdown(
+            """
+        <style>
+            .metric-card {
+                background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
+                border-radius: 12px;
+                padding: 16px;
+                box-shadow: 
+                    6px 6px 12px rgba(0,0,0,0.4),
+                    4px 4px 8px rgba(0,0,0,0.3),
+                    2px 2px 4px rgba(0,0,0,0.2),
+                    inset -1px -1px 2px rgba(0,0,0,0.5);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                cursor: pointer;
+                position: relative;
+                overflow: hidden;
+            }
+            .metric-card:hover {
+                transform: translateY(-6px) translateX(-2px) scale(1.01);
+            }
+            
+            /* Effet ombre verte pour Total Paris */
+            .metric-card.card-green:hover {
+                box-shadow: 
+                    10px 10px 20px rgba(0,0,0,0.5),
+                    8px 8px 16px rgba(0,0,0,0.4),
+                    0 0 20px rgba(50,178,150,0.6),
+                    0 0 40px rgba(50,178,150,0.3),
+                    inset 0 0 20px rgba(50,178,150,0.1);
+                border-color: rgba(50,178,150,0.8) !important;
+            }
+            
+            /* Effet ombre jaune pour Mises totales */
+            .metric-card.card-yellow:hover {
+                box-shadow: 
+                    10px 10px 20px rgba(0,0,0,0.5),
+                    8px 8px 16px rgba(0,0,0,0.4),
+                    0 0 20px rgba(251,191,36,0.6),
+                    0 0 40px rgba(251,191,36,0.3),
+                    inset 0 0 20px rgba(251,191,36,0.1);
+                border-color: rgba(251,191,36,0.8) !important;
+            }
+            
+            /* Effet ombre verte pour Gains potentiels */
+            .metric-card.card-gains:hover {
+                box-shadow: 
+                    10px 10px 20px rgba(0,0,0,0.5),
+                    8px 8px 16px rgba(0,0,0,0.4),
+                    0 0 20px rgba(50,178,150,0.6),
+                    0 0 40px rgba(50,178,150,0.3),
+                    inset 0 0 20px rgba(50,178,150,0.1);
+                border-color: rgba(50,178,150,0.8) !important;
+            }
+            
+            /* Effet ombre violette pour Marges attendues */
+            .metric-card.card-purple:hover {
+                box-shadow: 
+                    10px 10px 20px rgba(0,0,0,0.5),
+                    8px 8px 16px rgba(0,0,0,0.4),
+                    0 0 20px rgba(147,51,234,0.6),
+                    0 0 40px rgba(147,51,234,0.3),
+                    inset 0 0 20px rgba(147,51,234,0.1);
+                border-color: rgba(147,51,234,0.8) !important;
+            }
+            
+            .metric-card::after {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: linear-gradient(135deg, rgba(255,255,255,0.08), transparent);
+                opacity: 0;
+                transition: opacity 0.3s ease;
+            }
+            .metric-card:hover::after {
+                opacity: 1;
+            }
+            .metric-card::before {
+                content: '';
+                position: absolute;
+                bottom: -2px;
+                right: -2px;
+                width: 40%;
+                height: 40%;
+                border-radius: 0 0 12px 0;
+                pointer-events: none;
+            }
+        </style>
+        """,
+            unsafe_allow_html=True,
+        )
+
         # Global metrics
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
             st.markdown(
                 f"""
-            <div style='background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
-                        border-radius: 12px; padding: 16px; border: 1px solid rgba(50,178,150,0.2);'>
+            <div class='metric-card card-green' style='border: 1px solid rgba(50,178,150,0.2);'>
                 <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px;'>📝 Total Paris</div>
                 <div style='font-size: 32px; font-weight: 700; color: #32b296;'>{len(bets_data)}</div>
                 <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>paris en cours</div>
@@ -142,8 +263,7 @@ if st.session_state.get("logged_in", False):
         with col2:
             st.markdown(
                 f"""
-            <div style='background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
-                        border-radius: 12px; padding: 16px; border: 1px solid rgba(251,191,36,0.2);'>
+            <div class='metric-card card-yellow' style='border: 1px solid rgba(251,191,36,0.2);'>
                 <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px;'>💰 Mises totales</div>
                 <div style='font-size: 32px; font-weight: 700; color: #fbbf24;'>{total_mises:.2f}€</div>
                 <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>engagés</div>
@@ -156,8 +276,7 @@ if st.session_state.get("logged_in", False):
             gain_color = "#32b296" if total_gains_potentiels > 0 else "#e04e4e"
             st.markdown(
                 f"""
-            <div style='background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
-                        border-radius: 12px; padding: 16px; border: 1px solid rgba(50,178,150,0.2);'>
+            <div class='metric-card card-gains' style='border: 1px solid rgba(50,178,150,0.2);'>
                 <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px;'>💸 Gains potentiels</div>
                 <div style='font-size: 32px; font-weight: 700; color: {gain_color};'>{total_gains_potentiels:+.2f}€</div>
                 <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>si tout gagne</div>
@@ -170,8 +289,7 @@ if st.session_state.get("logged_in", False):
             marge_color = "#32b296" if total_marges > 0 else "#e04e4e"
             st.markdown(
                 f"""
-            <div style='background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
-                        border-radius: 12px; padding: 16px; border: 1px solid rgba(147,51,234,0.2);'>
+            <div class='metric-card card-purple' style='border: 1px solid rgba(147,51,234,0.2);'>
                 <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px;'>📈 Marges attendues</div>
                 <div style='font-size: 32px; font-weight: 700; color: {marge_color};'>{total_marges:+.2f}€</div>
                 <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>espérées</div>
@@ -184,71 +302,194 @@ if st.session_state.get("logged_in", False):
 
         # Competition-specific metrics
         st.markdown("### 🏆 Par compétition")
+
+        # Add CSS for competition cards
+        st.markdown(
+            """
+        <style>
+            .comp-card {
+                background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
+                border-radius: 12px;
+                padding: 16px;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                cursor: pointer;
+            }
+            .comp-card:not(.disabled):hover {
+                transform: translateY(-2px) scale(1.01);
+                box-shadow: 0 16px 32px rgba(0,0,0,0.4), 0 8px 16px rgba(0,0,0,0.2);
+            }
+            .comp-card.disabled {
+                cursor: default;
+            }
+        </style>
+        """,
+            unsafe_allow_html=True,
+        )
+
         col1, col2, col3 = st.columns(3)
 
         with col1:
             atp_mises = atp_bets["Mise"].sum() if not atp_bets.empty else 0
             atp_gains = atp_bets["Gain potentiel"].sum() if not atp_bets.empty else 0
             atp_marges = atp_bets["Marge attendue"].sum() if not atp_bets.empty else 0
-            st.markdown(
-                f"""
-            <div style='background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
-                        border-radius: 12px; padding: 16px; border: 1px solid rgba(59,130,246,0.2);'>
-                <div style='text-align: center; font-size: 18px; font-weight: 600; color: #3b82f6; margin-bottom: 12px;'>🎾 ATP</div>
-                <div style='margin: 8px 0;'>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span style='color: #9ca3af; font-size: 13px;'>Paris:</span>
-                        <span style='font-weight: 600;'>{len(atp_bets)}</span>
-                    </div>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span style='color: #9ca3af; font-size: 13px;'>Mises:</span>
-                        <span style='font-weight: 600; color: #fbbf24;'>{atp_mises:.2f}€</span>
-                    </div>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span style='color: #9ca3af; font-size: 13px;'>Gains pot.:</span>
-                        <span style='font-weight: 600; color: #32b296;'>{atp_gains:+.2f}€</span>
-                    </div>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span style='color: #9ca3af; font-size: 13px;'>Marges:</span>
-                        <span style='font-weight: 600; color: {"#32b296" if atp_marges > 0 else "#e04e4e"};'>{atp_marges:+.2f}€</span>
+
+            # Style grisé si pas de paris
+            is_empty = atp_bets.empty
+            card_style = "opacity: 0.4; filter: grayscale(0.8);" if is_empty else ""
+            border_color = (
+                "rgba(150,150,150,0.2)" if is_empty else "rgba(59,130,246,0.3)"
+            )
+            title_color = "#6b7280" if is_empty else "#3b82f6"
+            disabled_class = " disabled" if is_empty else ""
+
+            # Format values - use dash if empty
+            count_display = "—" if is_empty else str(len(atp_bets))
+            mises_display = "—" if is_empty else f"{atp_mises:.2f}€"
+            gains_display = "—" if is_empty else f"{atp_gains:+.2f}€"
+            marges_display = "—" if is_empty else f"{atp_marges:+.2f}€"
+            marges_color = (
+                "#6b7280" if is_empty else ("#32b296" if atp_marges > 0 else "#e04e4e")
+            )
+
+            # Add link if not empty
+            if is_empty:
+                st.markdown(
+                    f"""
+                <div class='comp-card{disabled_class}' style='border: 1px solid {border_color}; {card_style}'>
+                    <div style='text-align: center; font-size: 18px; font-weight: 600; color: {title_color}; margin-bottom: 12px;'>🎾 ATP</div>
+                    <div style='margin: 8px 0;'>
+                        <div style='display: flex; justify-content: space-between;'>
+                            <span style='color: #9ca3af; font-size: 13px;'>Paris:</span>
+                            <span style='font-weight: 600;'>{count_display}</span>
+                        </div>
+                        <div style='display: flex; justify-content: space-between;'>
+                            <span style='color: #9ca3af; font-size: 13px;'>Mises:</span>
+                            <span style='font-weight: 600; color: {"#6b7280" if is_empty else "#fbbf24"};'>{mises_display}</span>
+                        </div>
+                        <div style='display: flex; justify-content: space-between;'>
+                            <span style='color: #9ca3af; font-size: 13px;'>Gains pot.:</span>
+                            <span style='font-weight: 600; color: {"#6b7280" if is_empty else "#32b296"};'>{gains_display}</span>
+                        </div>
+                        <div style='display: flex; justify-content: space-between;'>
+                            <span style='color: #9ca3af; font-size: 13px;'>Marges:</span>
+                            <span style='font-weight: 600; color: {marges_color};'>{marges_display}</span>
+                        </div>
                     </div>
                 </div>
-            </div>
-            """,
-                unsafe_allow_html=True,
-            )
+                """,
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f"""
+                <a href='#atp-section' style='text-decoration: none; color: inherit;'>
+                    <div class='comp-card{disabled_class}' style='border: 1px solid {border_color}; {card_style}'>
+                        <div style='text-align: center; font-size: 18px; font-weight: 600; color: {title_color}; margin-bottom: 12px;'>🎾 ATP</div>
+                        <div style='margin: 8px 0;'>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='color: #9ca3af; font-size: 13px;'>Paris:</span>
+                                <span style='font-weight: 600;'>{count_display}</span>
+                            </div>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='color: #9ca3af; font-size: 13px;'>Mises:</span>
+                                <span style='font-weight: 600; color: {"#6b7280" if is_empty else "#fbbf24"};'>{mises_display}</span>
+                            </div>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='color: #9ca3af; font-size: 13px;'>Gains pot.:</span>
+                                <span style='font-weight: 600; color: {"#6b7280" if is_empty else "#32b296"};'>{gains_display}</span>
+                            </div>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='color: #9ca3af; font-size: 13px;'>Marges:</span>
+                                <span style='font-weight: 600; color: {marges_color};'>{marges_display}</span>
+                            </div>
+                        </div>
+                    </div>
+                </a>
+                """,
+                    unsafe_allow_html=True,
+                )
 
         with col2:
             wta_mises = wta_bets["Mise"].sum() if not wta_bets.empty else 0
             wta_gains = wta_bets["Gain potentiel"].sum() if not wta_bets.empty else 0
             wta_marges = wta_bets["Marge attendue"].sum() if not wta_bets.empty else 0
-            st.markdown(
-                f"""
-            <div style='background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
-                        border-radius: 12px; padding: 16px; border: 1px solid rgba(236,72,153,0.2);'>
-                <div style='text-align: center; font-size: 18px; font-weight: 600; color: #ec4899; margin-bottom: 12px;'>👩‍🦰 WTA</div>
-                <div style='margin: 8px 0;'>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span style='color: #9ca3af; font-size: 13px;'>Paris:</span>
-                        <span style='font-weight: 600;'>{len(wta_bets)}</span>
-                    </div>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span style='color: #9ca3af; font-size: 13px;'>Mises:</span>
-                        <span style='font-weight: 600; color: #fbbf24;'>{wta_mises:.2f}€</span>
-                    </div>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span style='color: #9ca3af; font-size: 13px;'>Gains pot.:</span>
-                        <span style='font-weight: 600; color: #32b296;'>{wta_gains:+.2f}€</span>
-                    </div>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span style='color: #9ca3af; font-size: 13px;'>Marges:</span>
-                        <span style='font-weight: 600; color: {"#32b296" if wta_marges > 0 else "#e04e4e"};'>{wta_marges:+.2f}€</span>
+
+            # Style grisé si pas de paris
+            is_empty = wta_bets.empty
+            card_style = "opacity: 0.4; filter: grayscale(0.8);" if is_empty else ""
+            border_color = (
+                "rgba(150,150,150,0.2)" if is_empty else "rgba(236,72,153,0.3)"
+            )
+            title_color = "#6b7280" if is_empty else "#ec4899"
+            disabled_class = " disabled" if is_empty else ""
+
+            # Format values - use dash if empty
+            count_display = "—" if is_empty else str(len(wta_bets))
+            mises_display = "—" if is_empty else f"{wta_mises:.2f}€"
+            gains_display = "—" if is_empty else f"{wta_gains:+.2f}€"
+            marges_display = "—" if is_empty else f"{wta_marges:+.2f}€"
+            marges_color = (
+                "#6b7280" if is_empty else ("#32b296" if wta_marges > 0 else "#e04e4e")
+            )
+
+            # Add link if not empty
+            if is_empty:
+                st.markdown(
+                    f"""
+                <div class='comp-card{disabled_class}' style='border: 1px solid {border_color}; {card_style}'>
+                    <div style='text-align: center; font-size: 18px; font-weight: 600; color: {title_color}; margin-bottom: 12px;'>👩‍🦰 WTA</div>
+                    <div style='margin: 8px 0;'>
+                        <div style='display: flex; justify-content: space-between;'>
+                            <span style='color: #9ca3af; font-size: 13px;'>Paris:</span>
+                            <span style='font-weight: 600;'>{count_display}</span>
+                        </div>
+                        <div style='display: flex; justify-content: space-between;'>
+                            <span style='color: #9ca3af; font-size: 13px;'>Mises:</span>
+                            <span style='font-weight: 600; color: {"#6b7280" if is_empty else "#fbbf24"};'>{mises_display}</span>
+                        </div>
+                        <div style='display: flex; justify-content: space-between;'>
+                            <span style='color: #9ca3af; font-size: 13px;'>Gains pot.:</span>
+                            <span style='font-weight: 600; color: {"#6b7280" if is_empty else "#32b296"};'>{gains_display}</span>
+                        </div>
+                        <div style='display: flex; justify-content: space-between;'>
+                            <span style='color: #9ca3af; font-size: 13px;'>Marges:</span>
+                            <span style='font-weight: 600; color: {marges_color};'>{marges_display}</span>
+                        </div>
                     </div>
                 </div>
-            </div>
-            """,
-                unsafe_allow_html=True,
-            )
+                """,
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f"""
+                <a href='#wta-section' style='text-decoration: none; color: inherit;'>
+                    <div class='comp-card{disabled_class}' style='border: 1px solid {border_color}; {card_style}'>
+                        <div style='text-align: center; font-size: 18px; font-weight: 600; color: {title_color}; margin-bottom: 12px;'>👩‍🦰 WTA</div>
+                        <div style='margin: 8px 0;'>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='color: #9ca3af; font-size: 13px;'>Paris:</span>
+                                <span style='font-weight: 600;'>{count_display}</span>
+                            </div>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='color: #9ca3af; font-size: 13px;'>Mises:</span>
+                                <span style='font-weight: 600; color: {"#6b7280" if is_empty else "#fbbf24"};'>{mises_display}</span>
+                            </div>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='color: #9ca3af; font-size: 13px;'>Gains pot.:</span>
+                                <span style='font-weight: 600; color: {"#6b7280" if is_empty else "#32b296"};'>{gains_display}</span>
+                            </div>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='color: #9ca3af; font-size: 13px;'>Marges:</span>
+                                <span style='font-weight: 600; color: {marges_color};'>{marges_display}</span>
+                            </div>
+                        </div>
+                    </div>
+                </a>
+                """,
+                    unsafe_allow_html=True,
+                )
 
         with col3:
             doubles_mises = doubles_bets["Mise"].sum() if not doubles_bets.empty else 0
@@ -258,52 +499,163 @@ if st.session_state.get("logged_in", False):
             doubles_marges = (
                 doubles_bets["Marge attendue"].sum() if not doubles_bets.empty else 0
             )
-            st.markdown(
-                f"""
-            <div style='background: linear-gradient(145deg, rgba(25,28,35,0.95), rgba(35,38,45,0.95));
-                        border-radius: 12px; padding: 16px; border: 1px solid rgba(168,85,247,0.2);'>
-                <div style='text-align: center; font-size: 18px; font-weight: 600; color: #a855f7; margin-bottom: 12px;'>🤝 Doubles</div>
-                <div style='margin: 8px 0;'>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span style='color: #9ca3af; font-size: 13px;'>Paris:</span>
-                        <span style='font-weight: 600;'>{len(doubles_bets)}</span>
-                    </div>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span style='color: #9ca3af; font-size: 13px;'>Mises:</span>
-                        <span style='font-weight: 600; color: #fbbf24;'>{doubles_mises:.2f}€</span>
-                    </div>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span style='color: #9ca3af; font-size: 13px;'>Gains pot.:</span>
-                        <span style='font-weight: 600; color: #32b296;'>{doubles_gains:+.2f}€</span>
-                    </div>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span style='color: #9ca3af; font-size: 13px;'>Marges:</span>
-                        <span style='font-weight: 600; color: {"#32b296" if doubles_marges > 0 else "#e04e4e"};'>{doubles_marges:+.2f}€</span>
+
+            # Style grisé si pas de paris
+            is_empty = doubles_bets.empty
+            card_style = "opacity: 0.4; filter: grayscale(0.8);" if is_empty else ""
+            border_color = (
+                "rgba(150,150,150,0.2)" if is_empty else "rgba(168,85,247,0.3)"
+            )
+            title_color = "#6b7280" if is_empty else "#a855f7"
+            disabled_class = " disabled" if is_empty else ""
+
+            # Format values - use dash if empty
+            count_display = "—" if is_empty else str(len(doubles_bets))
+            mises_display = "—" if is_empty else f"{doubles_mises:.2f}€"
+            gains_display = "—" if is_empty else f"{doubles_gains:+.2f}€"
+            marges_display = "—" if is_empty else f"{doubles_marges:+.2f}€"
+            marges_color = (
+                "#6b7280"
+                if is_empty
+                else ("#32b296" if doubles_marges > 0 else "#e04e4e")
+            )
+
+            # Add link if not empty
+            if is_empty:
+                st.markdown(
+                    f"""
+                <div class='comp-card{disabled_class}' style='border: 1px solid {border_color}; {card_style}'>
+                    <div style='text-align: center; font-size: 18px; font-weight: 600; color: {title_color}; margin-bottom: 12px;'>🤝 Doubles</div>
+                    <div style='margin: 8px 0;'>
+                        <div style='display: flex; justify-content: space-between;'>
+                            <span style='color: #9ca3af; font-size: 13px;'>Paris:</span>
+                            <span style='font-weight: 600;'>{count_display}</span>
+                        </div>
+                        <div style='display: flex; justify-content: space-between;'>
+                            <span style='color: #9ca3af; font-size: 13px;'>Mises:</span>
+                            <span style='font-weight: 600; color: {"#6b7280" if is_empty else "#fbbf24"};'>{mises_display}</span>
+                        </div>
+                        <div style='display: flex; justify-content: space-between;'>
+                            <span style='color: #9ca3af; font-size: 13px;'>Gains pot.:</span>
+                            <span style='font-weight: 600; color: {"#6b7280" if is_empty else "#32b296"};'>{gains_display}</span>
+                        </div>
+                        <div style='display: flex; justify-content: space-between;'>
+                            <span style='color: #9ca3af; font-size: 13px;'>Marges:</span>
+                            <span style='font-weight: 600; color: {marges_color};'>{marges_display}</span>
+                        </div>
                     </div>
                 </div>
-            </div>
-            """,
-                unsafe_allow_html=True,
-            )
+                """,
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f"""
+                <a href='#doubles-section' style='text-decoration: none; color: inherit;'>
+                    <div class='comp-card{disabled_class}' style='border: 1px solid {border_color}; {card_style}'>
+                        <div style='text-align: center; font-size: 18px; font-weight: 600; color: {title_color}; margin-bottom: 12px;'>🤝 Doubles</div>
+                        <div style='margin: 8px 0;'>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='color: #9ca3af; font-size: 13px;'>Paris:</span>
+                                <span style='font-weight: 600;'>{count_display}</span>
+                            </div>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='color: #9ca3af; font-size: 13px;'>Mises:</span>
+                                <span style='font-weight: 600; color: {"#6b7280" if is_empty else "#fbbf24"};'>{mises_display}</span>
+                            </div>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='color: #9ca3af; font-size: 13px;'>Gains pot.:</span>
+                                <span style='font-weight: 600; color: {"#6b7280" if is_empty else "#32b296"};'>{gains_display}</span>
+                            </div>
+                            <div style='display: flex; justify-content: space-between;'>
+                                <span style='color: #9ca3af; font-size: 13px;'>Marges:</span>
+                                <span style='font-weight: 600; color: {marges_color};'>{marges_display}</span>
+                            </div>
+                        </div>
+                    </div>
+                </a>
+                """,
+                    unsafe_allow_html=True,
+                )
 
         st.divider()
 
         # ATP Section
+        st.markdown('<div id="atp-section"></div>', unsafe_allow_html=True)
+        st.markdown("## 🎾 ATP")
         if not atp_bets.empty:
-            st.markdown("## 🎾 ATP")
             display_bet_cards(atp_bets)
-            st.divider()
+        else:
+            st.markdown(
+                """
+                <div style='
+                    background: rgba(100,100,100,0.1);
+                    border: 1px solid rgba(150,150,150,0.2);
+                    border-radius: 12px;
+                    padding: 40px;
+                    text-align: center;
+                    color: #6b7280;
+                    font-size: 16px;
+                    font-style: italic;
+                    margin: 20px 0;
+                '>
+                    Pas de paris pour cette compétition
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        st.divider()
 
         # WTA Section
+        st.markdown('<div id="wta-section"></div>', unsafe_allow_html=True)
+        st.markdown("## 👩‍🦰 WTA")
         if not wta_bets.empty:
-            st.markdown("## 👩‍🦰 WTA")
             display_bet_cards(wta_bets)
-            st.divider()
+        else:
+            st.markdown(
+                """
+                <div style='
+                    background: rgba(100,100,100,0.1);
+                    border: 1px solid rgba(150,150,150,0.2);
+                    border-radius: 12px;
+                    padding: 40px;
+                    text-align: center;
+                    color: #6b7280;
+                    font-size: 16px;
+                    font-style: italic;
+                    margin: 20px 0;
+                '>
+                    Pas de paris pour cette compétition
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        st.divider()
 
         # Doubles Section
+        st.markdown('<div id="doubles-section"></div>', unsafe_allow_html=True)
+        st.markdown("## 🤝 Doubles")
         if not doubles_bets.empty:
-            st.markdown("## 🤝 Doubles")
             display_bet_cards(doubles_bets)
+        else:
+            st.markdown(
+                """
+                <div style='
+                    background: rgba(100,100,100,0.1);
+                    border: 1px solid rgba(150,150,150,0.2);
+                    border-radius: 12px;
+                    padding: 40px;
+                    text-align: center;
+                    color: #6b7280;
+                    font-size: 16px;
+                    font-style: italic;
+                    margin: 20px 0;
+                '>
+                    Pas de paris pour cette compétition
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     else:
         st.info("Aucun pari en cours.")
