@@ -87,12 +87,15 @@ def load_bets(user_id: int):
     return bets_data
 
 
-def prepare_bets_data(user_id: int):
+def prepare_bets_data(user_id: int, finished: bool = True):
     """
     Groups bets_data by player beted and calculates total amount beted and won/lost.
     """
 
-    bets_data = load_bets(user_id)
+    if finished:
+        bets_data = load_bets(user_id)
+    else:
+        bets_data = load_inplay_bets(user_id)
     bets_data["Match"] = bets_data["winner_name"] + " - " + bets_data["loser_name"]
     bets_data["real_odds"] = (1 / (bets_data["odds"] - 1)) * 0.97 + 1
     bets_data["cote_pred"] = np.where(
@@ -104,18 +107,22 @@ def prepare_bets_data(user_id: int):
     bets_data["player_bet"] = np.where(
         bets_data["bet"] == 1, bets_data["winner_name"], bets_data["loser_name"]
     )
-    bets_data["win"] = np.where(
-        (bets_data["match_settled"] == 1) & (bets_data["bet"] == 1)
-        | (bets_data["match_settled"] == 2) & (bets_data["bet"] == 0),
-        1,
-        0,
-    )
-    bets_data["net_gain"] = np.where(
-        bets_data["win"] == 1,
-        bets_data["real_odds"] * bets_data["stake"] - bets_data["stake"],
-        -bets_data["stake"],
-    )
-    bets_data["net_unit"] = bets_data["net_gain"] / bets_data["stake"]
+    if finished:
+        bets_data["win"] = np.where(
+            (bets_data["match_settled"] == 1) & (bets_data["bet"] == 1)
+            | (bets_data["match_settled"] == 2) & (bets_data["bet"] == 0),
+            1,
+            0,
+        )
+        bets_data["net_gain"] = np.where(
+            bets_data["win"] == 1,
+            bets_data["real_odds"] * bets_data["stake"] - bets_data["stake"],
+            -bets_data["stake"],
+        )
+        bets_data["net_unit"] = bets_data["net_gain"] / bets_data["stake"]
+    else:
+        bets_data["net_gain"] = 0.0
+        bets_data["net_unit"] = 0.0
     bets_data["marge_unit"] = bets_data["real_odds"] / bets_data["cote_pred"] - 1
     bets_data["marge"] = bets_data["marge_unit"] * bets_data["stake"]
     prepared_bets = bets_data[
@@ -217,3 +224,64 @@ def prep_candle_data(user_id: int):
     # directly return JSON string
     candle_data_list = candle_data.to_dict(orient="records")
     return candle_data_list
+
+
+def load_inplay_bets(user_id: int):
+    """
+    Loads the bets_data for a given user from the database.
+    """
+    query_bets = """SELECT b.*,
+                            tourney_name,
+                            tourney_level,
+                            winner_name,
+                            loser_name,
+                            round,
+                            surface,
+                            match_settled,
+                            tourney_date,
+                            winner_pred,
+                            loser_pred,
+                            'doubles' = TRUE as doubles,
+                            'atp' as compet
+                                    FROM Bet b join men_matchs m on (b.ID_MATCH = m.ID_MATCH) 
+                                        right join predictions p on (m.ID_MATCH = p.ID_MATCH)
+                                        WHERE not match_settled in (1,2)
+                    UNION
+                        SELECT b.*,
+                            tourney_name,
+                            tourney_level,
+                            winner_name,
+                            loser_name,
+                            round,
+                            surface,
+                            match_settled,
+                            tourney_date,
+                            winner_pred,
+                            loser_pred,
+                            'doubles' = TRUE as doubles,
+                            'wta' as compet
+                                    FROM  Bet b join women_matchs m on (b.ID_MATCH = m.ID_MATCH)
+                                        right join predictions p on (m.ID_MATCH = p.ID_MATCH)
+                                        WHERE  not match_settled in (1,2)
+                    UNION
+                        SELECT b.*, 
+                                tourney_name,
+                                tourney_level,
+                                concat(winner_name1,'/',winner_name2) as winner_name,
+                                concat(loser_name1,'/',loser_name2)  as loser_name,
+                                round,
+                                surface,
+                                match_settled, 
+                                tourney_date, 
+                                winner_pred,
+                                loser_pred,
+                                'doubles' = FALSE as doubles  ,
+                                'doubles' as compet
+                                    FROM Bet b join double_matchs m  on (b.ID_MATCH = m.ID_MATCH) 
+                                        right join predictions p on (m.ID_MATCH = p.ID_MATCH)
+                                        WHERE not match_settled in (1,2)"""
+    bets_data = read_sql_query(BDD, query_bets)
+    bets_data = bets_data[(bets_data["ID_USER"] == user_id)]
+    bets_data.sort_values(by="tourney_date", ascending=True, inplace=True)
+    bets_data.reset_index(drop=True, inplace=True)
+    return bets_data

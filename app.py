@@ -36,6 +36,9 @@ logout_page = st.Page(logout, title="Log out", icon=":material/logout:")
 dashboard = st.Page(
     "pages/dashboard.py", title="Dashboard", icon=":material/dashboard:", default=True
 )
+bets_en_cours = st.Page(
+    "pages/bets_en_cours.py", title="Paris en cours", icon=":material/sports_tennis:"
+)
 
 if st.session_state.logged_in:
     pg = st.navigation(
@@ -43,7 +46,7 @@ if st.session_state.logged_in:
             f"{st.session_state.username} ({str(load_bankroll(st.session_state.ID_USER))}€)": [
                 logout_page
             ],
-            "Reports": [dashboard],
+            "Reports": [dashboard, bets_en_cours],
         }
     )
 else:

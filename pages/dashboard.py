@@ -16,7 +16,7 @@ st.title("Les résultats TeNNet", text_alignment="center")
 # You can add more dashboard components here as needed.
 # For example, display user-specific data if logged in
 if st.session_state.get("logged_in", False):
-    bets_data = prepare_bets_data(st.session_state["ID_USER"])
+    bets_data = prepare_bets_data(st.session_state["ID_USER"], finished=True)
     if not bets_data.empty:
         col1, col2, col3 = st.columns([7, 1, 4])
         with col1:
