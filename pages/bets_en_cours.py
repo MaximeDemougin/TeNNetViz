@@ -23,6 +23,13 @@ def display_bet_cards(bets_df, cols_per_row=3):
                 # Calculate potential gain
                 potential_gain = bet["Mise"] * bet["Cote"] - bet["Mise"]
 
+                # Calculate marge percentage
+                marge_percentage = (
+                    (bet["Marge attendue"] / bet["Mise"] * 100)
+                    if bet["Mise"] > 0
+                    else 0
+                )
+
                 # Build Flashscore URL
                 flashscore_url = f"https://www.flashscore.fr/match/{bet['ID_MATCH']}"
 
@@ -97,7 +104,7 @@ def display_bet_cards(bets_df, cols_per_row=3):
                         </div>
                         <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
                             <span style='color: #9ca3af; font-size: 14px;'>📈 Marge</span>
-                            <span style='color: {"#32b296" if bet["Marge attendue"] > 0 else "#e04e4e"}; font-weight: 600;'>{bet["Marge attendue"]:+.2f}€</span>
+                            <span style='color: {"#c026d3" if bet["Marge attendue"] > 0 else "#e04e4e"}; font-weight: 600;'>{bet["Marge attendue"]:+.2f}€ ({marge_percentage:+.1f}%)</span>
                         </div>
                     </div>
                     <hr style='opacity: 0.15; margin: 16px 0;'>
@@ -146,6 +153,9 @@ if st.session_state.get("logged_in", False):
         total_mises = bets_data["Mise"].sum()
         total_gains_potentiels = bets_data["Gain potentiel"].sum()
         total_marges = bets_data["Marge attendue"].sum()
+        total_marge_percentage = (
+            (total_marges / total_mises * 100) if total_mises > 0 else 0
+        )
 
         # Display summary statistics with cards
         st.markdown("### 📊 Vue d'ensemble")
@@ -210,10 +220,10 @@ if st.session_state.get("logged_in", False):
                 box-shadow: 
                     10px 10px 20px rgba(0,0,0,0.5),
                     8px 8px 16px rgba(0,0,0,0.4),
-                    0 0 20px rgba(147,51,234,0.6),
-                    0 0 40px rgba(147,51,234,0.3),
-                    inset 0 0 20px rgba(147,51,234,0.1);
-                border-color: rgba(147,51,234,0.8) !important;
+                    0 0 20px rgba(192,38,211,0.6),
+                    0 0 40px rgba(192,38,211,0.3),
+                    inset 0 0 20px rgba(192,38,211,0.1);
+                border-color: rgba(192,38,211,0.8) !important;
             }
             
             .metric-card::after {
@@ -285,13 +295,13 @@ if st.session_state.get("logged_in", False):
             )
 
         with col4:
-            marge_color = "#6e32a7" if total_marges > 0 else "#e04e4e"
+            marge_color = "#c026d3" if total_marges > 0 else "#e04e4e"
             st.markdown(
                 f"""
-            <div class='metric-card card-purple' style='border: 1px solid rgba(147,51,234,0.2);'>
+            <div class='metric-card card-purple' style='border: 1px solid rgba(192,38,211,0.2);'>
                 <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px;'>📈 Marges attendues</div>
                 <div style='font-size: 32px; font-weight: 700; color: {marge_color};'>{total_marges:+.2f}€</div>
-                <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>attendus</div>
+                <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>{total_marge_percentage:+.1f}% des mises</div>
             </div>
             """,
                 unsafe_allow_html=True,
@@ -346,9 +356,12 @@ if st.session_state.get("logged_in", False):
             count_display = "—" if is_empty else str(len(atp_bets))
             mises_display = "—" if is_empty else f"{atp_mises:.2f}€"
             gains_display = "—" if is_empty else f"{atp_gains:+.2f}€"
-            marges_display = "—" if is_empty else f"{atp_marges:+.2f}€"
+            atp_marge_pct = (atp_marges / atp_mises * 100) if atp_mises > 0 else 0
+            marges_display = (
+                "—" if is_empty else f"{atp_marges:+.2f}€ ({atp_marge_pct:+.1f}%)"
+            )
             marges_color = (
-                "#6b7280" if is_empty else ("#32b296" if atp_marges > 0 else "#e04e4e")
+                "#6b7280" if is_empty else ("#c026d3" if atp_marges > 0 else "#e04e4e")
             )
 
             # Add link if not empty
@@ -427,9 +440,12 @@ if st.session_state.get("logged_in", False):
             count_display = "—" if is_empty else str(len(wta_bets))
             mises_display = "—" if is_empty else f"{wta_mises:.2f}€"
             gains_display = "—" if is_empty else f"{wta_gains:+.2f}€"
-            marges_display = "—" if is_empty else f"{wta_marges:+.2f}€"
+            wta_marge_pct = (wta_marges / wta_mises * 100) if wta_mises > 0 else 0
+            marges_display = (
+                "—" if is_empty else f"{wta_marges:+.2f}€ ({wta_marge_pct:+.1f}%)"
+            )
             marges_color = (
-                "#6b7280" if is_empty else ("#32b296" if wta_marges > 0 else "#e04e4e")
+                "#6b7280" if is_empty else ("#c026d3" if wta_marges > 0 else "#e04e4e")
             )
 
             # Add link if not empty
@@ -503,20 +519,27 @@ if st.session_state.get("logged_in", False):
             is_empty = doubles_bets.empty
             card_style = "opacity: 0.4; filter: grayscale(0.8);" if is_empty else ""
             border_color = (
-                "rgba(150,150,150,0.2)" if is_empty else "rgba(168,85,247,0.3)"
+                "rgba(150,150,150,0.2)" if is_empty else "rgba(192,38,211,0.3)"
             )
-            title_color = "#6b7280" if is_empty else "#a855f7"
+            title_color = "#6b7280" if is_empty else "#c026d3"
             disabled_class = " disabled" if is_empty else ""
 
             # Format values - use dash if empty
             count_display = "—" if is_empty else str(len(doubles_bets))
             mises_display = "—" if is_empty else f"{doubles_mises:.2f}€"
             gains_display = "—" if is_empty else f"{doubles_gains:+.2f}€"
-            marges_display = "—" if is_empty else f"{doubles_marges:+.2f}€"
+            doubles_marge_pct = (
+                (doubles_marges / doubles_mises * 100) if doubles_mises > 0 else 0
+            )
+            marges_display = (
+                "—"
+                if is_empty
+                else f"{doubles_marges:+.2f}€ ({doubles_marge_pct:+.1f}%)"
+            )
             marges_color = (
                 "#6b7280"
                 if is_empty
-                else ("#32b296" if doubles_marges > 0 else "#e04e4e")
+                else ("#c026d3" if doubles_marges > 0 else "#e04e4e")
             )
 
             # Add link if not empty
