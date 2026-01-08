@@ -17,7 +17,9 @@ logo_path = Path(st.session_state["project_path"]) / "logo_TeNNet.png"
 logo_base64 = base64.b64encode(logo_path.read_bytes()).decode()
 
 
-st.set_page_config(layout="centered")
+st.set_page_config(
+    layout="centered", page_icon="logo_TeNNet.png", page_title="Login - TeNNet"
+)
 st.markdown("## Login to  TeNNet", text_alignment="center")
 st.markdown("###", text_alignment="center")
 del_login = st.empty()

@@ -1,7 +1,9 @@
 import streamlit as st
 from data import prepare_bets_data
 
-st.set_page_config(layout="wide")
+st.set_page_config(
+    layout="wide", page_icon="logo_TeNNet.png", page_title="Paris en cours"
+)
 
 # Style global pour le fond de page
 st.markdown(
@@ -163,7 +165,7 @@ def display_bet_cards(bets_df, cols_per_row=3):
                         </div>
                         <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
                             <span style='color: #9ca3af; font-size: 14px;'>📈 Marge</span>
-                            <span style='color: {"#f97316" if bet["Marge attendue"] > 0 else "#e04e4e"}; font-weight: 600;'>{bet["Marge attendue"]:+.2f}€ ({marge_percentage:+.1f}%)</span>
+                            <span style='color: {"#3b82f6" if bet["Marge attendue"] > 0 else "#e04e4e"}; font-weight: 600;'>{bet["Marge attendue"]:+.2f}€ ({marge_percentage:+.1f}%)</span>
                         </div>
                     </div>
                     <hr style='opacity: 0.15; margin: 16px 0;'>
@@ -295,16 +297,16 @@ if st.session_state.get("logged_in", False):
                 border-color: rgba(50,178,150,0.8) !important;
             }
             
-            /* Effet ombre orange pour Marges attendues */
+            /* Effet ombre bleue pour Marges attendues */
             .metric-card.card-purple:hover {
                 box-shadow: 
                     0 8px 24px rgba(0,0,0,0.5),
                     0 4px 8px rgba(0,0,0,0.4),
-                    0 0 20px rgba(249,115,22,0.6),
-                    0 0 40px rgba(249,115,22,0.3),
-                    0 0 0 1px rgba(249,115,22,0.2),
+                    0 0 20px rgba(59,130,246,0.6),
+                    0 0 40px rgba(59,130,246,0.3),
+                    0 0 0 1px rgba(59,130,246,0.2),
                     inset 0 1px 0 rgba(255,255,255,0.1);
-                border-color: rgba(249,115,22,0.8) !important;
+                border-color: rgba(59,130,246,0.8) !important;
             }
             
             .metric-card::after {
@@ -376,10 +378,10 @@ if st.session_state.get("logged_in", False):
             )
 
         with col4:
-            marge_color = "#f97316" if total_marges > 0 else "#e04e4e"
+            marge_color = "#3b82f6" if total_marges > 0 else "#e04e4e"
             st.markdown(
                 f"""
-            <div class='metric-card card-purple' style='border: 1px solid rgba(249,115,22,0.2);'>
+            <div class='metric-card card-purple' style='border: 1px solid rgba(59,130,246,0.2);'>
                 <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px;'>📈 Marges attendues</div>
                 <div style='font-size: 32px; font-weight: 700; color: {marge_color};'>{total_marges:+.2f}€</div>
                 <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>{total_marge_percentage:+.1f}% des mises</div>
@@ -470,7 +472,7 @@ if st.session_state.get("logged_in", False):
                 "—" if is_empty else f"{atp_marges:+.2f}€ ({atp_marge_pct:+.1f}%)"
             )
             marges_color = (
-                "#6b7280" if is_empty else ("#f97316" if atp_marges > 0 else "#e04e4e")
+                "#6b7280" if is_empty else ("#3b82f6" if atp_marges > 0 else "#e04e4e")
             )
 
             # Add link if not empty
@@ -554,7 +556,7 @@ if st.session_state.get("logged_in", False):
                 "—" if is_empty else f"{wta_marges:+.2f}€ ({wta_marge_pct:+.1f}%)"
             )
             marges_color = (
-                "#6b7280" if is_empty else ("#f97316" if wta_marges > 0 else "#e04e4e")
+                "#6b7280" if is_empty else ("#3b82f6" if wta_marges > 0 else "#e04e4e")
             )
 
             # Add link if not empty
@@ -648,7 +650,7 @@ if st.session_state.get("logged_in", False):
             marges_color = (
                 "#6b7280"
                 if is_empty
-                else ("#f97316" if doubles_marges > 0 else "#e04e4e")
+                else ("#3b82f6" if doubles_marges > 0 else "#e04e4e")
             )
 
             # Add link if not empty
