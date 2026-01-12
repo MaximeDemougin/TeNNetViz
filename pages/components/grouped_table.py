@@ -50,6 +50,7 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
         match_cols = [c for c in match_cols if c in match_df.columns]
 
         display_match = match_df[match_cols].copy()
+        display_match["_index"] = display_match["player_bet"]
         if "Date" in display_match.columns:
             try:
                 display_match["Date"] = (
@@ -143,8 +144,13 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
             styler = styler.map(mise_cell_color, subset=["Mise"])
         if "ROI attendu" in display_match.columns:
             styler = styler.map(gains_cell_color, subset=["ROI attendu"])
-
-        st.dataframe(styler, width="stretch")
+        # styler.index = display_match["_index"]
+        st.dataframe(
+            styler,
+            width="stretch",
+            hide_index=True,
+            selection_mode="single-row",
+        )
 
     else:
         df_display = bets_data.copy()
@@ -331,8 +337,9 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
             .map(mises_color, subset=["Mises"])
             .map(result_att_color, subset=["Resultat.attendu"])
         )
-
-        st.dataframe(styled, width="stretch")
+        st.dataframe(
+            styled, width="stretch", hide_index=True, selection_mode="single-row"
+        )
 
         try:
             chart_df = grouped.copy() if "grouped" in locals() else None

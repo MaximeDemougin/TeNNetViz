@@ -9,6 +9,8 @@ sys.path.append(st.session_state["project_path"])
 from db_utils.db_utils import read_sql_query
 
 BDD = "TeNNet"
+MAX_PRED_BETABLE = 4
+MIN_PRED_BETABLE = 1.1
 
 
 def load_bankroll(user_id: int):
@@ -384,3 +386,72 @@ def load_inplay_bets(user_id: int):
     bets_data.sort_values(by="tourney_date", ascending=True, inplace=True)
     bets_data.reset_index(drop=True, inplace=True)
     return bets_data
+
+
+def load_future_matchs():
+    """
+    Loads the future matchs from the database.
+    """
+    query_matchs = """SELECT  tourney_name,
+                            tourney_level,
+                            m.winner_name,
+                            m.loser_name,
+                            round,
+                            surface,
+                            tourney_date,
+                            winner_pred,
+                            loser_pred,
+                            'doubles' = TRUE as doubles,
+                            'atp' as compet,
+                             o.liens as odds_lien,
+                             MaxW as max_odds1,
+                             MaxL as max_odds2,
+                             m.ID_MATCH
+                                    FROM men_matchs m 
+                                    right join odds o on (m.ID_MATCH = o.id)
+                                    right join predictions p on (m.ID_MATCH = p.ID_MATCH)
+                                        WHERE match_settled = 0
+                    UNION
+                        SELECT tourney_name,
+                            tourney_level,
+                            m.winner_name,
+                            m.loser_name,
+                            round,
+                            surface,
+                            tourney_date,
+                            winner_pred,
+                            loser_pred,
+                            'doubles' = TRUE as doubles,
+                            'wta' as compet,
+                             o.liens as odds_lien,
+                             MaxW as max_odds1,
+                             MaxL as max_odds2,
+                             m.ID_MATCH
+                                    FROM women_matchs m 
+                                    right join odds o on (m.ID_MATCH = o.id)
+                                    right join predictions p on (m.ID_MATCH = p.ID_MATCH)
+                                        WHERE match_settled = 0
+                    UNION
+                        SELECT  tourney_name,
+                                tourney_level,
+                                concat(winner_name1,'/',winner_name2) as winner_name,
+                                concat(loser_name1,'/',loser_name2)  as loser_name,
+                                round,
+                                surface,
+                                tourney_date, 
+                                winner_pred,
+                                loser_pred,
+                                'doubles' = FALSE as doubles,
+                                'doubles' as compet,
+                                o.liens as odds_lien,
+                                MaxW as max_odds1,
+                                MaxL as max_odds2,
+                             m.ID_MATCH
+                                    FROM double_matchs m
+                                    right join odds o on (m.ID_MATCH = o.id)
+                                    right join predictions p on (m.ID_MATCH = p.ID_MATCH)
+                                        WHERE match_settled = 0"""
+    matchs_data = read_sql_query(BDD, query_matchs)
+    matchs_data.sort_values(by="tourney_date", ascending=True, inplace=True)
+    matchs_data.reset_index(drop=True, inplace=True)
+    return matchs_data

@@ -51,6 +51,11 @@ bets_en_cours = st.Page(
     "pages/bets_en_cours.py", title="Paris en cours", icon=":material/sports_tennis:"
 )
 
+# New page: future matches
+future_matchs_page = st.Page(
+    "pages/future_matchs.py", title="Matchs à venir", icon=":material/calendar_today:"
+)
+
 if st.session_state.logged_in:
     # compute in-play count to show next to the menu label, but cache it so it doesn't update on every rerun
     cached = st.session_state.get("cached_total_inplay", None)
@@ -69,8 +74,9 @@ if st.session_state.logged_in:
             f"{st.session_state.username} ({str(st.session_state.bankroll_cached)}€)": [
                 logout_page
             ],
-            "Navigation": [
+            "Reports": [
                 dashboard,
+                future_matchs_page,
                 st.Page(
                     "pages/bets_en_cours.py",
                     title=f"Paris en cours 🟢{total_inplay}",
