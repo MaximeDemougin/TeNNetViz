@@ -41,16 +41,16 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
             "Surface",
             "Round",
             "player_bet",
+            "Score",
             "Cote",
             "Prédiction",
             "Mise",
-            "Marge attendue",
             "Gains net",
+            "Marge attendue",
         ]
         match_cols = [c for c in match_cols if c in match_df.columns]
 
         display_match = match_df[match_cols].copy()
-        display_match["_index"] = display_match["player_bet"]
         if "Date" in display_match.columns:
             try:
                 display_match["Date"] = (
@@ -72,19 +72,6 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
 
         if "Cote" in display_match.columns and "Prédiction" in display_match.columns:
             display_match["ROI attendu"] = display_match.apply(_compute_roi_att, axis=1)
-            # Reorder columns to place ROI attendu between Prédiction and Mise (if Mise exists)
-            cols = list(display_match.columns)
-            if "Prédiction" in cols:
-                try:
-                    # remove if already present to avoid duplicates
-                    cols = [c for c in cols if c != "ROI attendu"]
-                    insert_idx = cols.index("Prédiction") + 1
-                    cols.insert(insert_idx, "ROI attendu")
-                except Exception:
-                    pass
-            display_match = display_match[
-                [c for c in cols if c in display_match.columns]
-            ]
 
         # Rename the data column for display only: "Marge attendue" -> "Gains attendus"
         if "Marge attendue" in display_match.columns:
@@ -284,11 +271,11 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
                 group_col: group_by,
                 "Count": "Nb Paris",
                 "Avg_Cote": "Cote moyenne",
-                "ROI_attendu": "ROI attendu",
                 "Total_Mises": "Mises",
-                "Resultat_attendu": "Resultat.attendu",
                 "Total_Gains": "Gains",
                 "Roi": "ROI",
+                "Resultat_attendu": "Resultat.attendu",
+                "ROI_attendu": "ROI attendu",
             }
         )
 

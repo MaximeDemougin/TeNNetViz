@@ -177,8 +177,15 @@ try:
         "Prédiction": st.column_config.NumberColumn("Prédiction", format="%.3f"),
         "Max_cote": st.column_config.NumberColumn("Max_cote", format="%.3f"),
         "EV_pct": st.column_config.NumberColumn("EV_pct", format="%+.1f"),
+        "Odds_URL": st.column_config.LinkColumn(
+            "Cotes", max_chars=30, display_text="Voir Cotes"
+        ),
+        "Flash_URL": st.column_config.LinkColumn(
+            "Flashscore", max_chars=30, display_text="Voir Flashscore"
+        ),
     }
-except Exception:
+except Exception as e:
+    st.error(f"Erreur lors de la configuration des colonnes : {e}")
     col_config = None
 
 # Add a separate time column (Heure) for display

@@ -38,6 +38,7 @@ def load_bets(user_id: int):
                             round,
                             surface,
                             match_settled,
+                            score,
                             tourney_date,
                             winner_pred,
                             loser_pred,
@@ -55,6 +56,7 @@ def load_bets(user_id: int):
                             round,
                             surface,
                             match_settled,
+                            score,
                             tourney_date,
                             winner_pred,
                             loser_pred,
@@ -72,6 +74,7 @@ def load_bets(user_id: int):
                                 round,
                                 surface,
                                 match_settled, 
+                                score,
                                 tourney_date, 
                                 winner_pred,
                                 loser_pred,
@@ -169,6 +172,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             "compet",
             "surface",
             "tourney_level",
+            "score",
             "player_bet",
             "stake",
             "round",
@@ -256,6 +260,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             "surface": "Surface",
             "stake": "Mise",
             "round": "Round",
+            "score": "Score",
             "real_odds": "Cote",
             "cote_pred": "Prédiction",
             "net_gain": "Gains net",
@@ -272,6 +277,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
                 "Level": "first",
                 "Round": "first",
                 "Surface": "first",
+                "Score": "first",
                 "Mise": "sum",
                 "Cote": lambda x: np.average(
                     x, weights=prepared_bets.loc[x.index, "Mise"]
@@ -289,42 +295,9 @@ def prepare_bets_data(user_id: int, finished: bool = True):
     grouped_bets.sort_values(by="Date", ascending=True, inplace=True)
     grouped_bets.reset_index(drop=True, inplace=True)
     grouped_bets["Cumulative Gains"] = grouped_bets["Gains net"].cumsum()
+    # print(grouped_bets.dtypes)
 
     return grouped_bets
-
-
-def prep_candle_data(user_id: int):
-    """
-    Prepares data for candlestick chart visualization grouped by day
-    and uses cumulative net gains.
-    """
-    bets_data = prepare_bets_data(user_id)
-    bets_data["Date"] = pd.to_datetime(bets_data["Date"]).dt.date
-
-    candle_data = (
-        bets_data.groupby("Date")
-        .agg(
-            open=("Cumulative Gains", "first"),
-            high=("Cumulative Gains", "max"),
-            low=("Cumulative Gains", "min"),
-            close=("Cumulative Gains", "last"),
-        )
-        .reset_index()
-    )
-
-    # rename columns
-    candle_data.rename(columns={"Date": "time"}, inplace=True)
-
-    # round values
-    for col in ["open", "high", "low", "close"]:
-        candle_data[col] = candle_data[col].round(2)
-
-    # convert time to string format YYYY-MM-DD
-    candle_data["time"] = candle_data["time"].astype(str)
-
-    # directly return JSON string
-    candle_data_list = candle_data.to_dict(orient="records")
-    return candle_data_list
 
 
 def load_inplay_bets(user_id: int):
