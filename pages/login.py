@@ -40,7 +40,7 @@ with del_login.form("Login Form", width="stretch", border=False):
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         login_submit_button = st.form_submit_button(
-            label="Login", type="primary", use_container_width=True
+            label="Login", type="primary", width="stretch"
         )
 
     if login_submit_button:

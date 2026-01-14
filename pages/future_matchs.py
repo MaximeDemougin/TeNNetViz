@@ -1,9 +1,17 @@
 # ruff: noqa: E402
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from data import load_future_matchs
+
+
+# Cache the results to avoid reloading on every user interaction / rerun.
+# TTL set to 300 seconds (5 minutes) — adjust as needed.
+@st.cache_data(ttl=300)
+def get_future_matchs_cached():
+    return load_future_matchs()
+
 
 MAX_PRED_BETABLE, MIN_PRED_BETABLE, MIN_MARGE = 4, 1.1, 2
 st.set_page_config(page_title="Matchs à venir", layout="wide")
@@ -14,7 +22,7 @@ st.markdown(
 )
 
 try:
-    df = load_future_matchs()
+    df = get_future_matchs_cached()
 except Exception as e:
     st.error(f"Erreur lors du chargement des matchs: {e}")
     st.stop()
@@ -280,14 +288,14 @@ def _ev_color(v):
 
 styler = (
     display_df.style.apply(_row_highlight, axis=1)
-    .applymap(_ev_color, subset=["EV_pct"])
+    .map(_ev_color, subset=["EV_pct"])  # replaced deprecated applymap -> map
     .format({"Prédiction": "{:.3f}", "Max_cote": "{:.3f}", "EV_pct": "{:+.1f}"})
 )
 
 try:
-    st.dataframe(styler, use_container_width=True, column_config=col_config)
+    st.dataframe(styler, width="stretch", column_config=col_config)
 except Exception:
-    st.dataframe(display_df, use_container_width=True, column_config=col_config)
+    st.dataframe(display_df, width="stretch", column_config=col_config)
 
 # Show recommended bets as cards with link
 recommended = out[out["Parier ?"]].copy()
