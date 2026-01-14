@@ -162,6 +162,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         )
         bets_data["net_gain"] = 0.0
         bets_data["net_unit"] = 0.0
+        bets_data["score"] = 0
     bets_data["marge_unit"] = bets_data["real_odds"] / bets_data["cote_pred"] - 1
     bets_data["marge"] = bets_data["marge_unit"] * bets_data["stake"]
     prepared_bets = bets_data[
