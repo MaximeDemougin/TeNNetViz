@@ -4,9 +4,9 @@ import pygwalker as pyg
 from data import prepare_bets_data
 
 st.set_page_config(
-    layout="wide", 
-    page_icon="logo_TeNNet.png", 
-    page_title="Exploration de données - TeNNet"
+    layout="wide",
+    page_icon="logo_TeNNet.png",
+    page_title="Exploration de données - TeNNet",
 )
 
 # Style global pour le fond de page
@@ -68,8 +68,9 @@ st.sidebar.header("Options de données")
 
 data_source = st.sidebar.radio(
     "Choisissez la source de données :",
-    ["Paris terminés", "Paris en cours", "Les deux"]
+    ["Paris terminés", "Paris en cours", "Les deux"],
 )
+
 
 # Charger les données selon la sélection
 @st.cache_data(ttl=300)
@@ -86,18 +87,19 @@ def load_explorer_data(user_id, source):
         df_finished["Statut"] = "Terminé"
         df_ongoing["Statut"] = "En cours"
         df = pd.concat([df_finished, df_ongoing], ignore_index=True)
-    
+
     return df
+
 
 try:
     # Charger les données
     with st.spinner("Chargement des données..."):
         df = load_explorer_data(st.session_state.ID_USER, data_source)
-    
+
     if df is None or df.empty:
         st.info("📊 Aucune donnée disponible pour l'exploration.")
         st.stop()
-    
+
     # Afficher des informations sur le jeu de données
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -108,11 +110,12 @@ try:
         if "Gains net" in df.columns:
             total_gains = df["Gains net"].sum()
             st.metric("💰 Gains totaux", f"{total_gains:.2f}€")
-    
+
     st.markdown("---")
-    
+
     # Description
-    st.markdown("""
+    st.markdown(
+        """
     ### 💡 Guide d'utilisation
     
     **PyGWalker** vous permet de créer des visualisations interactives en glissant-déposant les colonnes :
@@ -124,24 +127,25 @@ try:
     - **💾 Export** : Sauvegardez vos visualisations
     
     Explorez vos paris par compétition, surface, niveau, et bien plus encore !
-    """)
-    
+    """
+    )
+
     # Options PyGWalker
     with st.expander("⚙️ Options avancées"):
         dark_mode = st.checkbox("Mode sombre", value=True)
         show_toolbar = st.checkbox("Afficher la barre d'outils", value=True)
-    
+
     st.markdown("---")
-    
+
     # Créer et afficher PyGWalker
     st.markdown('<div class="pygwalker-container">', unsafe_allow_html=True)
-    
+
     # Configuration de PyGWalker
     walker_config = {
         "dark": "dark" if dark_mode else "light",
         "hideToolBar": not show_toolbar,
     }
-    
+
     # Utiliser pyg.walk pour afficher l'interface interactive
     pyg.walk(
         df,
@@ -150,17 +154,19 @@ try:
         use_kernel_calc=True,  # Optimisation des performances
         return_html=False,
         dark=walker_config["dark"],
-        hideToolBar=walker_config["hideToolBar"]
+        hideToolBar=walker_config["hideToolBar"],
     )
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
     # Section d'aide supplémentaire
     with st.expander("❓ Aide - Colonnes disponibles"):
-        st.markdown("""
+        st.markdown(
+            """
         **Colonnes disponibles dans vos données :**
-        """)
-        
+        """
+        )
+
         cols_info = {
             "Match": "Nom du match (Joueur 1 - Joueur 2)",
             "Date": "Date et heure du match",
@@ -173,9 +179,9 @@ try:
             "Prédiction": "Cote prédite par le modèle",
             "Gains net": "Gains ou pertes du pari",
             "Marge attendue": "Marge théorique du pari",
-            "Cumulative Gains": "Gains cumulés"
+            "Cumulative Gains": "Gains cumulés",
         }
-        
+
         for col in df.columns:
             if col in cols_info:
                 st.write(f"- **{col}** : {cols_info[col]}")

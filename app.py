@@ -58,7 +58,9 @@ future_matchs_page = st.Page(
 
 # New page: data explorer
 data_explorer_page = st.Page(
-    "pages/data_explorer.py", title="Exploration de données", icon=":material/analytics:"
+    "pages/data_explorer.py",
+    title="Exploration de données",
+    icon=":material/analytics:",
 )
 
 if st.session_state.logged_in:
