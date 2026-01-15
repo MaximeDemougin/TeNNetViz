@@ -8,3 +8,4 @@ PyMySQL>=1.1.2,<2.0.0
 streamlit-lightweight-charts>=0.7.20,<0.8.0
 plotly>=6.5.0,<7.0.0
 streamlit-plotly-events>=0.0.6,<0.0.7
+pygwalker>=0.4.9,<0.5.0

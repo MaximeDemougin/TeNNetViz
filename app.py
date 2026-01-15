@@ -56,6 +56,11 @@ future_matchs_page = st.Page(
     "pages/future_matchs.py", title="Matchs à venir", icon=":material/calendar_today:"
 )
 
+# New page: data explorer
+data_explorer_page = st.Page(
+    "pages/data_explorer.py", title="Exploration de données", icon=":material/analytics:"
+)
+
 if st.session_state.logged_in:
     # compute in-play count to show next to the menu label, but cache it so it doesn't update on every rerun
     cached = st.session_state.get("cached_total_inplay", None)
@@ -82,6 +87,9 @@ if st.session_state.logged_in:
                     title=f"Paris en cours 🟢{total_inplay}",
                     icon=":material/sports_tennis:",
                 ),
+            ],
+            "Analyse": [
+                data_explorer_page,
             ],
         }
     )
