@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import re
 
 import sys
 
@@ -11,6 +12,59 @@ from db_utils.db_utils import read_sql_query
 BDD = "TeNNet"
 MAX_PRED_BETABLE = 4
 MIN_PRED_BETABLE = 1.1
+
+
+def _score_is_void(score):
+    set_re = re.compile(r"^(?P<a>\d+)-(?P<b>\d+)(?:\(\d+\))?$")
+    try:
+        if not isinstance(score, str) or score.strip() == "":
+            return True
+        # normalize tokens and keep original tokens for set parsing
+        raw_tokens = score.strip().split()
+        tokens_upper = [t.upper().strip(".,") for t in raw_tokens]
+
+        # detect retirement/abandon markers (common variants)
+        retire_markers = (
+            "RET",
+            "RETIRE",
+            "RETIREE",
+            "RET.",
+            "ABD",
+            "ABANDON",
+            "RETIREMENT",
+        )
+        is_retirement = any(
+            any(marker in t for marker in retire_markers) for t in tokens_upper
+        )
+
+        # keep tokens that look like set scores (contain digits and a dash)
+        set_tokens = [t.rstrip(",") for t in raw_tokens if re.search(r"\d+-\d+", t)]
+
+        # if there are no set tokens, consider void unless retirement explicitly present with at least one numeric token
+        if not set_tokens:
+            return not is_retirement
+
+        # helper to check if a set looks completed
+        def _set_completed(t):
+            m = set_re.match(t)
+            if not m:
+                return False
+            a = int(m.group("a"))
+            b = int(m.group("b"))
+            return a >= 6 or b >= 6 or "(" in t
+
+        # If the match ended with a retirement/abandon, only consider it valid if there is at least one completed set
+        if is_retirement:
+            any_completed = any(_set_completed(t) for t in set_tokens)
+            return not any_completed
+
+        # Otherwise, ensure every reported set looks completed (>=6 or includes tiebreak)
+        for t in set_tokens:
+            if not _set_completed(t):
+                return True
+        return False
+    except Exception:
+        return True
 
 
 def load_bankroll(user_id: int):
@@ -270,66 +324,13 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         inplace=True,
     )
     # Flag matches with incomplete sets (voided) — they should not count in results.
-    import re
 
-    set_re = re.compile(r"^(?P<a>\d+)-(?P<b>\d+)(?:\(\d+\))?$")
-
-    def _score_is_void(score):
-        try:
-            if not isinstance(score, str) or score.strip() == "":
-                return True
-            # normalize tokens and keep original tokens for set parsing
-            raw_tokens = score.strip().split()
-            tokens_upper = [t.upper().strip(".,") for t in raw_tokens]
-
-            # detect retirement/abandon markers (common variants)
-            retire_markers = (
-                "RET",
-                "RETIRE",
-                "RETIREE",
-                "RET.",
-                "ABD",
-                "ABANDON",
-                "RETIREMENT",
-            )
-            is_retirement = any(
-                any(marker in t for marker in retire_markers) for t in tokens_upper
-            )
-
-            # keep tokens that look like set scores (contain digits and a dash)
-            set_tokens = [t.rstrip(",") for t in raw_tokens if re.search(r"\d+-\d+", t)]
-
-            # if there are no set tokens, consider void unless retirement explicitly present with at least one numeric token
-            if not set_tokens:
-                return not is_retirement
-
-            # helper to check if a set looks completed
-            def _set_completed(t):
-                m = set_re.match(t)
-                if not m:
-                    return False
-                a = int(m.group("a"))
-                b = int(m.group("b"))
-                return a >= 6 or b >= 6 or "(" in t
-
-            # If the match ended with a retirement/abandon, only consider it valid if there is at least one completed set
-            if is_retirement:
-                any_completed = any(_set_completed(t) for t in set_tokens)
-                return not any_completed
-
-            # Otherwise, ensure every reported set looks completed (>=6 or includes tiebreak)
-            for t in set_tokens:
-                if not _set_completed(t):
-                    return True
-            return False
-        except Exception:
-            return True
-
-    prepared_bets["voided"] = prepared_bets["Score"].apply(_score_is_void)
-    print(prepared_bets[prepared_bets["ID_MATCH"] == "8tblVgJr"][["Score", "voided"]])
-    # Exclude voided matches from the grouped results
-    valid_bets = prepared_bets[~prepared_bets["voided"]].copy()
-
+    if finished:
+        prepared_bets["voided"] = prepared_bets["Score"].apply(_score_is_void)
+        # Exclude voided matches from the grouped results
+        valid_bets = prepared_bets[~prepared_bets["voided"]].copy()
+    else:
+        valid_bets = prepared_bets.copy()
     grouped_bets = (
         valid_bets.groupby(
             ["ID_MATCH", "Match", "player_bet"]
