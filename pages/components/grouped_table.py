@@ -10,7 +10,7 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
     """
     group_by = st.radio(
         "Grouper par :",
-        options=["Compétition", "Surface", "Cote", "Mois", "Jour", "Match"],
+        options=["Compétition", "Surface", "Cote", "Marge", "Mois", "Jour", "Match"],
         horizontal=True,
         label_visibility="collapsed",
     )
@@ -21,6 +21,7 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
         "Compétition": "Compétition",
         "Surface": "Surface",
         "Cote": "Cote_bin",
+        "Marge": "Marge_bin",
         "Mois": "Mois",
     }
     group_col = col_map.get(group_by, "Match")
@@ -189,6 +190,23 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
                 df_display["Cote_bin"].astype(str).replace("nan", "Unknown")
             )
 
+        if group_by == "Marge":
+            # Compute ROI attendu per bet to bin by expected margin
+            try:
+                cote_vals = df_display["Cote"].astype(float)
+                pred_vals = df_display["Prédiction"].astype(float)
+                roi_att = (cote_vals / pred_vals - 1) * 100
+            except Exception:
+                roi_att = pd.Series([0.0] * len(df_display))
+            marge_bins = [-100, 0, 2, 5, 10, 20, 100]
+            marge_labels = ["<0%", "0-2%", "2-5%", "5-10%", "10-20%", ">=20%"]
+            df_display["Marge_bin"] = pd.cut(
+                roi_att, bins=marge_bins, labels=marge_labels, include_lowest=True
+            )
+            df_display["Marge_bin"] = (
+                df_display["Marge_bin"].astype(str).replace("nan", "Unknown")
+            )
+
         df_display["Date"] = df_display["Date"].dt.strftime("%Y-%m-%d")
 
         # Build aggregation dict, include Mois_key if present to help sorting
@@ -251,6 +269,16 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
                 grouped = grouped.sort_values(by=group_col, ascending=True)
             except Exception:
                 grouped = grouped.set_index(group_col).reindex(order_desc).reset_index()
+
+        if group_by == "Marge":
+            order_marge = ["<0%", "0-2%", "2-5%", "5-10%", "10-20%", ">=20%"]
+            try:
+                grouped[group_col] = pd.Categorical(
+                    grouped[group_col], categories=order_marge, ordered=True
+                )
+                grouped = grouped.sort_values(by=group_col, ascending=False)
+            except Exception:
+                grouped = grouped.set_index(group_col).reindex(order_marge[::-1]).reset_index()
 
         display_df = grouped[
             [
