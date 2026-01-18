@@ -100,7 +100,7 @@ def load_bets(user_id: int):
                             'atp' as compet
                                     FROM Bet b join men_matchs m on (b.ID_MATCH = m.ID_MATCH) 
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
-                                        WHERE match_settled in (1,2) and score != 'W/O'
+                                        WHERE match_settled in (1,2) and score != 'W/O' and status = 1
                     UNION
                         SELECT b.*,
                             tourney_name,
@@ -118,7 +118,7 @@ def load_bets(user_id: int):
                             'wta' as compet
                                     FROM  Bet b join women_matchs m on (b.ID_MATCH = m.ID_MATCH)
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
-                                        WHERE  match_settled in (1,2) and score != 'W/O'
+                                        WHERE  match_settled in (1,2) and score != 'W/O' and status = 1
                     UNION
                         SELECT b.*, 
                                 tourney_name,
@@ -136,7 +136,7 @@ def load_bets(user_id: int):
                                 'doubles' as compet
                                     FROM Bet b join double_matchs m  on (b.ID_MATCH = m.ID_MATCH) 
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
-                                        WHERE match_settled in (1,2) and score != 'W/O'"""
+                                        WHERE match_settled in (1,2) and score != 'W/O' and status = 1"""
     bets_data = read_sql_query(BDD, query_bets)
     bets_data = bets_data[
         (bets_data["ID_USER"] == user_id) & (bets_data["tourney_date"] >= "2026-01-01")
