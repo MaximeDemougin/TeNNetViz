@@ -288,11 +288,28 @@ def _ev_color(v):
         return ""
 
 
+def _competition_color(v):
+    """Color competition names to match the chart colors"""
+    val_lower = str(v).lower()
+    color_map = {
+        "atp": "#10b981",  # Vert émeraude pour ATP
+        "wta": "#ec4899",  # Rose pour WTA
+        "doubles": "#8b5cf6",  # Violet pour Doubles
+        "challenger": "#6366f1",  # Bleu indigo pour Challenger
+    }
+    color = color_map.get(val_lower, "#d1d4dc")  # Couleur par défaut
+    return f"color: {color}; font-weight: 600;"
+
+
 styler = (
     display_df.style.apply(_row_highlight, axis=1)
     .map(_ev_color, subset=["EV_pct"])  # replaced deprecated applymap -> map
     .format({"Prédiction": "{:.3f}", "Max_cote": "{:.3f}", "EV_pct": "{:+.1f}"})
 )
+
+# Apply competition colors if Compétition column exists
+if "Compétition" in display_df.columns:
+    styler = styler.map(_competition_color, subset=["Compétition"])
 
 try:
     st.dataframe(styler, width="stretch", column_config=col_config)

@@ -428,3 +428,302 @@ def render_competition_distribution_bar(bets_data: pd.DataFrame) -> None:
         mise_icon="💸",
         mise_title="Répartition des mises par compétition",
     )
+
+
+def render_cote_histogram(bets_data: pd.DataFrame) -> None:
+    """Render a histogram showing the distribution of bets by odds (cote)."""
+    if bets_data.empty:
+        return
+
+    try:
+        df_copy = bets_data.copy()
+        cote_vals = pd.to_numeric(df_copy["Cote"], errors="coerce").dropna()
+
+        if len(cote_vals) == 0:
+            return
+
+        # Define bins and colors matching the distribution bar
+        bins = [0, 1.5, 2.0, 2.5, 3.0, 5, 100]
+        labels = ["<1.5", "1.5-2.0", "2.0-2.5", "2.5-3.0", "3.0-5.0", "≥5.0"]
+        colors = ["#10b981", "#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#ef4444"]
+
+        # Create binned data
+        df_copy["Cote_bin"] = pd.cut(
+            cote_vals, bins=bins, labels=labels, include_lowest=True
+        )
+
+        # Count bets per bin
+        counts = df_copy["Cote_bin"].value_counts().reindex(labels, fill_value=0)
+
+        # Create histogram
+        fig = go.Figure()
+
+        for i, label in enumerate(labels):
+            fig.add_trace(
+                go.Bar(
+                    x=[label],
+                    y=[counts[label]],
+                    name=label,
+                    marker_color=colors[i],
+                    text=[counts[label]],
+                    textposition="outside",
+                    textfont=dict(color="#d1d4dc", size=12, weight=600),
+                    hovertemplate=f"{label}: %{{y}} paris<extra></extra>",
+                    showlegend=False,
+                )
+            )
+
+        fig.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#d1d4dc"),
+            xaxis_title="Plage de cotes",
+            yaxis_title="Nombre de paris",
+            margin=dict(t=40, b=60, l=60, r=40),
+            bargap=0.2,
+            title=dict(
+                text="📊 Distribution des paris par cote",
+                font=dict(size=16, color="#9ca3af"),
+                x=0.5,
+                xanchor="center",
+            ),
+        )
+
+        fig.update_xaxes(gridcolor="rgba(100,100,120,0.2)")
+        fig.update_yaxes(gridcolor="rgba(100,100,120,0.2)")
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        pass
+
+
+def render_marge_histogram(bets_data: pd.DataFrame) -> None:
+    """Render a histogram showing the distribution of bets by expected margin (ROI attendu)."""
+    if bets_data.empty:
+        return
+
+    try:
+        df_copy = bets_data.copy()
+
+        # Calculate ROI attendu
+        cote_vals = pd.to_numeric(df_copy["Cote"], errors="coerce")
+        pred_vals = pd.to_numeric(df_copy["Prédiction"], errors="coerce")
+        roi_att = ((cote_vals / pred_vals - 1) * 100).dropna()
+
+        if len(roi_att) == 0:
+            return
+
+        # Define bins and colors matching the distribution bar
+        bins = [-100, 0, 2, 5, 10, 20, 100]
+        labels = ["<0%", "0-2%", "2-5%", "5-10%", "10-20%", "≥20%"]
+        colors = ["#10b981", "#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#ef4444"]
+
+        # Create binned data
+        df_copy["Marge_bin"] = pd.cut(
+            roi_att, bins=bins, labels=labels, include_lowest=True
+        )
+
+        # Count bets per bin
+        counts = df_copy["Marge_bin"].value_counts().reindex(labels, fill_value=0)
+
+        # Create histogram
+        fig = go.Figure()
+
+        for i, label in enumerate(labels):
+            fig.add_trace(
+                go.Bar(
+                    x=[label],
+                    y=[counts[label]],
+                    name=label,
+                    marker_color=colors[i],
+                    text=[counts[label]],
+                    textposition="outside",
+                    textfont=dict(color="#d1d4dc", size=12, weight=600),
+                    hovertemplate=f"{label}: %{{y}} paris<extra></extra>",
+                    showlegend=False,
+                )
+            )
+
+        fig.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#d1d4dc"),
+            xaxis_title="Plage de ROI attendu",
+            yaxis_title="Nombre de paris",
+            margin=dict(t=40, b=60, l=60, r=40),
+            bargap=0.2,
+            title=dict(
+                text="📈 Distribution des paris par ROI attendu",
+                font=dict(size=16, color="#9ca3af"),
+                x=0.5,
+                xanchor="center",
+            ),
+        )
+
+        fig.update_xaxes(gridcolor="rgba(100,100,120,0.2)")
+        fig.update_yaxes(gridcolor="rgba(100,100,120,0.2)")
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        pass
+
+
+def render_cote_raw_histogram(bets_data: pd.DataFrame, nbins: int = 50) -> None:
+    """Render a histogram showing the raw distribution of bets by odds (cote) - no binning.
+
+    Args:
+        bets_data: DataFrame containing bet data
+        nbins: Number of bins for the histogram (default: 50)
+    """
+    if bets_data.empty:
+        return
+
+    try:
+        df_copy = bets_data.copy()
+        cote_vals = pd.to_numeric(df_copy["Cote"], errors="coerce").dropna()
+
+        if len(cote_vals) == 0:
+            return
+
+        # Define bins and colors matching the distribution bar
+        bins = [0, 1.5, 2.0, 2.5, 3.0, 5, 100]
+        colors_map = ["#10b981", "#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#ef4444"]
+
+        # Assign color to each value based on which bin it falls into
+        def get_color(val):
+            for i in range(len(bins) - 1):
+                if bins[i] <= val < bins[i + 1]:
+                    return colors_map[i]
+            return colors_map[-1]
+
+        df_copy["cote_color"] = cote_vals.apply(get_color)
+
+        # Create histogram with colored bars
+        fig = px.histogram(
+            df_copy,
+            x="Cote",
+            nbins=nbins,
+            color="cote_color",
+            color_discrete_map={color: color for color in colors_map},
+            labels={"Cote": "Cote", "count": "Nombre de paris"},
+        )
+
+        fig.update_traces(
+            marker_line_color="rgba(255,255,255,0.2)",
+            marker_line_width=1,
+        )
+
+        # Update hover template for all traces
+        fig.for_each_trace(
+            lambda trace: trace.update(
+                hovertemplate="Cote: %{x:.2f}<br>Nombre: %{y}<extra></extra>"
+            )
+        )
+
+        fig.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#d1d4dc"),
+            xaxis_title="Cote",
+            yaxis_title="Nombre de paris",
+            margin=dict(t=40, b=60, l=60, r=40),
+            title=dict(
+                text="📊 Distribution continue des cotes",
+                font=dict(size=16, color="#9ca3af"),
+                x=0.5,
+                xanchor="center",
+            ),
+            showlegend=False,
+        )
+
+        fig.update_xaxes(gridcolor="rgba(100,100,120,0.2)")
+        fig.update_yaxes(gridcolor="rgba(100,100,120,0.2)")
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        pass
+
+
+def render_marge_raw_histogram(bets_data: pd.DataFrame, nbins: int = 50) -> None:
+    """Render a histogram showing the raw distribution of bets by expected margin (ROI attendu) - no binning.
+
+    Args:
+        bets_data: DataFrame containing bet data
+        nbins: Number of bins for the histogram (default: 50)
+    """
+    if bets_data.empty:
+        return
+
+    try:
+        df_copy = bets_data.copy()
+
+        # Calculate ROI attendu
+        cote_vals = pd.to_numeric(df_copy["Cote"], errors="coerce")
+        pred_vals = pd.to_numeric(df_copy["Prédiction"], errors="coerce")
+        roi_att = ((cote_vals / pred_vals - 1) * 100).dropna()
+
+        if len(roi_att) == 0:
+            return
+
+        # Define bins and colors matching the distribution bar
+        bins = [-100, 0, 2, 5, 10, 20, 100]
+        colors_map = ["#10b981", "#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#ef4444"]
+
+        # Assign color to each value based on which bin it falls into
+        def get_color(val):
+            for i in range(len(bins) - 1):
+                if bins[i] <= val < bins[i + 1]:
+                    return colors_map[i]
+            return colors_map[-1]
+
+        df_copy["roi_color"] = roi_att.apply(get_color)
+        df_copy["ROI_attendu"] = roi_att
+
+        # Create histogram with colored bars
+        fig = px.histogram(
+            df_copy,
+            x="ROI_attendu",
+            nbins=nbins,
+            color="roi_color",
+            color_discrete_map={color: color for color in colors_map},
+            labels={"ROI_attendu": "ROI attendu (%)", "count": "Nombre de paris"},
+        )
+
+        fig.update_traces(
+            marker_line_color="rgba(255,255,255,0.2)",
+            marker_line_width=1,
+        )
+
+        # Update hover template for all traces
+        fig.for_each_trace(
+            lambda trace: trace.update(
+                hovertemplate="ROI attendu: %{x:.1f}%<br>Nombre: %{y}<extra></extra>"
+            )
+        )
+
+        fig.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#d1d4dc"),
+            xaxis_title="ROI attendu (%)",
+            yaxis_title="Nombre de paris",
+            margin=dict(t=40, b=60, l=60, r=40),
+            title=dict(
+                text="📈 Distribution continue du ROI attendu",
+                font=dict(size=16, color="#9ca3af"),
+                x=0.5,
+                xanchor="center",
+            ),
+            showlegend=False,
+        )
+
+        fig.update_xaxes(gridcolor="rgba(100,100,120,0.2)")
+        fig.update_yaxes(gridcolor="rgba(100,100,120,0.2)")
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        pass

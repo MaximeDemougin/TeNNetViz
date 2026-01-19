@@ -37,12 +37,22 @@ def render_match_info(bets_data: pd.DataFrame, selected: list) -> None:
         bar_gradient = "linear-gradient(90deg,#9ca3af,#6b7280)"
         bar_note = ""
 
+    # Get competition color
+    comp_lower = str(match.get("Compétition", "")).lower()
+    comp_color_map = {
+        "atp": "#10b981",  # Vert émeraude pour ATP
+        "wta": "#ec4899",  # Rose pour WTA
+        "doubles": "#8b5cf6",  # Violet pour Doubles
+        "challenger": "#6366f1",  # Bleu indigo pour Challenger
+    }
+    comp_color = comp_color_map.get(comp_lower, "#9ca3af")
+
     card_html = f"""
     <div style='background:linear-gradient(180deg, rgba(18,20,24,0.9), rgba(23,25,30,0.85));border-radius:14px;padding:18px;border:1px solid rgba(255,255,255,0.04);box-shadow:0 6px 18px rgba(0,0,0,0.45);font-family:Segoe UI, Roboto, sans-serif;color:#e6eef8;'>
         <div style='display:grid;grid-template-columns:1fr 120px;gap:16px;align-items:center;'>
             <div>
                 <div style='font-size:18px;font-weight:700;color:#ffffff;margin-bottom:6px;'>{match["Match"]}</div>
-                <div style='color:#9ca3af;font-size:13px;margin-bottom:10px;'>{match["Compétition"]} — {match["Level"]} • {match["Surface"]} • {match["Round"]}</div>
+                <div style='color:#9ca3af;font-size:13px;margin-bottom:10px;'><span style='color:{comp_color};font-weight:700;'>{match["Compétition"]}</span> — {match["Level"]} • {match["Surface"]} • {match["Round"]}</div>
                 <div style='display:flex;gap:12px;flex-wrap:wrap;'>
                     <div style='background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;font-size:13px;color:#cbd5e1;'>📅 {match["Date"]}</div>
                     <div style='background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;font-size:13px;color:#cbd5e1;'>🎾 Joueur: {match["player_bet"]}</div>

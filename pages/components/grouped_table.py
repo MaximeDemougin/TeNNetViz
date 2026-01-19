@@ -5,6 +5,10 @@ from pages.components.charts import (
     render_marge_distribution_bar,
     render_surface_distribution_bar,
     render_competition_distribution_bar,
+    render_cote_histogram,
+    render_marge_histogram,
+    render_cote_raw_histogram,
+    render_marge_raw_histogram,
     sort_competitions,
 )
 
@@ -130,6 +134,30 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
             except Exception:
                 return ""
 
+        # Color for competition names to match the chart colors
+        def competition_cell_color(v):
+            val_lower = str(v).lower()
+            color_map = {
+                "atp": "#10b981",  # Vert émeraude pour ATP
+                "wta": "#ec4899",  # Rose pour WTA
+                "doubles": "#8b5cf6",  # Violet pour Doubles
+                "challenger": "#6366f1",  # Bleu indigo pour Challenger
+            }
+            color = color_map.get(val_lower, "#d1d4dc")  # Couleur par défaut
+            return f"color: {color}; font-weight: 600;"
+
+        # Color for surface names to match the chart colors
+        def surface_cell_color(v):
+            color_map = {
+                "Dur": "#3772d1",
+                "Terre battue": "#b45715",
+                "Gazon": "#22c55e",
+                "Carpet": "#8b5cf6",
+                "Indoor Hard": "#6366f1",
+            }
+            color = color_map.get(v, "#d1d4dc")  # Couleur par défaut
+            return f"color: {color}; font-weight: 600;"
+
         styler = display_match.style.format(formatters)
         if "Gains net" in display_match.columns:
             styler = styler.map(gains_cell_color, subset=["Gains net"])
@@ -139,6 +167,10 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
             styler = styler.map(mise_cell_color, subset=["Mise"])
         if "ROI attendu" in display_match.columns:
             styler = styler.map(gains_cell_color, subset=["ROI attendu"])
+        if "Compétition" in display_match.columns:
+            styler = styler.map(competition_cell_color, subset=["Compétition"])
+        if "Surface" in display_match.columns:
+            styler = styler.map(surface_cell_color, subset=["Surface"])
         # styler.index = display_match["_index"]
         st.dataframe(
             styler,
@@ -362,6 +394,56 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
                 color = "#3b82f6"
             return f"color: {color}; font-weight: 700;"
 
+        # Color for competition names to match the chart colors
+        def competition_color(val):
+            val_lower = str(val).lower()
+            color_map = {
+                "atp": "#10b981",  # Vert émeraude pour ATP
+                "wta": "#ec4899",  # Rose pour WTA
+                "doubles": "#8b5cf6",  # Violet pour Doubles
+                "challenger": "#6366f1",  # Bleu indigo pour Challenger
+            }
+            color = color_map.get(val_lower, "#d1d4dc")  # Couleur par défaut
+            return f"color: {color}; font-weight: 700;"
+
+        # Color for surface names to match the chart colors
+        def surface_color(val):
+            color_map = {
+                "Dur": "#3772d1",
+                "Terre battue": "#b45715",
+                "Gazon": "#22c55e",
+                "Carpet": "#8b5cf6",
+                "Indoor Hard": "#6366f1",
+            }
+            color = color_map.get(val, "#d1d4dc")  # Couleur par défaut
+            return f"color: {color}; font-weight: 700;"
+
+        # Color for cote bins to match the chart colors
+        def cote_bin_color(val):
+            color_map = {
+                "<1.5": "#10b981",
+                "1.5-2.0": "#3b82f6",
+                "2.0-2.5": "#6366f1",
+                "2.5-3.0": "#8b5cf6",
+                "3.0-5.0": "#ec4899",
+                ">=5.0": "#ef4444",
+            }
+            color = color_map.get(val, "#d1d4dc")  # Couleur par défaut
+            return f"color: {color}; font-weight: 700;"
+
+        # Color for marge bins to match the chart colors
+        def marge_bin_color(val):
+            color_map = {
+                "<0%": "#10b981",
+                "0-2%": "#3b82f6",
+                "2-5%": "#6366f1",
+                "5-10%": "#8b5cf6",
+                "10-20%": "#ec4899",
+                ">=20%": "#ef4444",
+            }
+            color = color_map.get(val, "#d1d4dc")  # Couleur par défaut
+            return f"color: {color}; font-weight: 700;"
+
         styled = (
             display_df.style.format(
                 {
@@ -378,6 +460,20 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
             .map(mises_color, subset=["Mises"])
             .map(result_att_color, subset=["Resultat.attendu"])
         )
+
+        # Apply grouping-specific colors for the group column
+        if "Compétition" in display_df.columns:
+            styled = styled.map(competition_color, subset=["Compétition"])
+
+        if "Surface" in display_df.columns:
+            styled = styled.map(surface_color, subset=["Surface"])
+
+        if "Cote" in display_df.columns:
+            styled = styled.map(cote_bin_color, subset=["Cote"])
+
+        if "Marge" in display_df.columns:
+            styled = styled.map(marge_bin_color, subset=["Marge"])
+
         st.dataframe(
             styled, width="stretch", hide_index=True, selection_mode="single-row"
         )
@@ -493,11 +589,63 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
 
     # Add colored distribution bar for bets by odds only when "Cote" grouping is selected
     if group_by == "Cote":
-        render_cote_distribution_bar(bets_data)
+        # Add toggle button for visualization type
+        viz_type_cote = st.radio(
+            "Type de visualisation :",
+            options=[
+                "Barre de progression",
+                "Bar chart (bins)",
+                "Histogramme (continu)",
+            ],
+            horizontal=True,
+            key="viz_type_cote",
+        )
+
+        if viz_type_cote == "Barre de progression":
+            render_cote_distribution_bar(bets_data)
+        elif viz_type_cote == "Bar chart (bins)":
+            render_cote_histogram(bets_data)
+        else:
+            # Add slider for number of bins
+            nbins_cote = st.slider(
+                "Nombre de bins :",
+                min_value=10,
+                max_value=100,
+                value=50,
+                step=5,
+                key="nbins_cote",
+            )
+            render_cote_raw_histogram(bets_data, nbins=nbins_cote)
 
     # Add colored distribution bar for bets by expected margin only when "Marge" grouping is selected
     if group_by == "Marge":
-        render_marge_distribution_bar(bets_data)
+        # Add toggle button for visualization type
+        viz_type_marge = st.radio(
+            "Type de visualisation :",
+            options=[
+                "Barre de progression",
+                "Bar chart (bins)",
+                "Histogramme (continu)",
+            ],
+            horizontal=True,
+            key="viz_type_marge",
+        )
+
+        if viz_type_marge == "Barre de progression":
+            render_marge_distribution_bar(bets_data)
+        elif viz_type_marge == "Bar chart (bins)":
+            render_marge_histogram(bets_data)
+        else:
+            # Add slider for number of bins
+            nbins_marge = st.slider(
+                "Nombre de bins :",
+                min_value=10,
+                max_value=100,
+                value=50,
+                step=5,
+                key="nbins_marge",
+            )
+            render_marge_raw_histogram(bets_data, nbins=nbins_marge)
 
     # Add colored distribution bar for bets by surface only when "Surface" grouping is selected
     if group_by == "Surface":
