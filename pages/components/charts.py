@@ -4,6 +4,43 @@ import pandas as pd
 import plotly.graph_objects as go
 
 
+def sort_competitions(series_or_list):
+    """Sort competitions in the standard order: ATP, WTA, Doubles, then others alphabetically.
+
+    Args:
+        series_or_list: pandas Series or list of competition names
+
+    Returns:
+        Sorted list or Series
+    """
+    # Define the standard order
+    standard_order = ["atp", "wta", "doubles"]
+
+    if isinstance(series_or_list, pd.Series):
+        # For pandas Series
+        values = series_or_list.unique().tolist()
+    else:
+        # For lists
+        values = list(series_or_list)
+
+    # Normalize for comparison (lowercase)
+    values_lower = [str(v).lower() for v in values]
+
+    # Sort: first by standard order, then alphabetically for others
+    def sort_key(val):
+        val_lower = str(val).lower()
+        if val_lower in standard_order:
+            return (0, standard_order.index(val_lower))
+        else:
+            return (1, val_lower)
+
+    sorted_values = sorted(values, key=sort_key)
+
+    if isinstance(series_or_list, pd.Series):
+        return pd.Series(sorted_values)
+    return sorted_values
+
+
 def render_cumulative_chart(bets_data: pd.DataFrame) -> list:
     """Render cumulative gains line chart and return the selected points list (may be empty).
 
@@ -127,3 +164,267 @@ def render_cumulative_chart(bets_data: pd.DataFrame) -> list:
                 del st.session_state["selected_from_chart"]
 
     return selected
+
+
+def render_distribution_bar(
+    bets_data: pd.DataFrame,
+    distribution_type: str,
+    column_name: str = None,
+    bins: list = None,
+    labels: list = None,
+    colors: list = None,
+    color_mapping: dict = None,
+    count_icon: str = "📊",
+    count_title: str = "Répartition du nombre de paris",
+    mise_icon: str = "💰",
+    mise_title: str = "Répartition des mises",
+    calculate_bins_fn: callable = None,
+) -> None:
+    """Render a colored progress bar showing the distribution of bets by a given criterion.
+
+    Args:
+        bets_data: DataFrame containing bet data
+        distribution_type: Type of distribution ('binned', 'categorical', 'computed')
+        column_name: Column name to use for categorical distributions
+        bins: Bin edges for binned distributions
+        labels: Labels for bins or categories
+        colors: List of colors to use (for binned or categorical with labels)
+        color_mapping: Dict mapping categories to colors (for categorical)
+        count_icon: Icon for count distribution title
+        count_title: Title for count distribution
+        mise_icon: Icon for mise distribution title
+        mise_title: Title for mise distribution
+        calculate_bins_fn: Function to calculate bins for 'computed' type (receives df, returns series)
+    """
+    if bets_data.empty:
+        return
+
+    try:
+        df_copy = bets_data.copy()
+
+        # Process data based on distribution type
+        if distribution_type == "binned":
+            # For binned data (cote, marge)
+            if calculate_bins_fn:
+                values = calculate_bins_fn(df_copy)
+            else:
+                values = pd.to_numeric(df_copy[column_name], errors="coerce")
+
+            df_copy["bin_category"] = pd.cut(
+                values, bins=bins, labels=labels, include_lowest=True
+            )
+            group_column = "bin_category"
+            categories = labels
+
+        elif distribution_type == "categorical":
+            # For categorical data (surface, competition)
+            if column_name not in df_copy.columns:
+                return
+            group_column = column_name
+            counts_series = df_copy[column_name].value_counts()
+            categories = counts_series.index.tolist()
+
+            # Sort competitions in standard order (ATP, WTA, Doubles) if this is the Compétition column
+            if column_name == "Compétition":
+                categories = sort_competitions(categories)
+
+        else:
+            return
+
+        # Count bets in each category
+        counts = (
+            df_copy[group_column].value_counts().sort_index()
+            if distribution_type == "binned"
+            else df_copy[group_column].value_counts()
+        )
+        total_count = counts.sum()
+
+        # Sum of bets (Mise) in each category
+        if distribution_type == "binned":
+            mise_sums = (
+                df_copy.groupby(group_column, observed=True)["Mise"]
+                .sum()
+                .reindex(categories, fill_value=0)
+            )
+        else:
+            mise_sums = df_copy.groupby(group_column, observed=True)["Mise"].sum()
+
+        total_mise = mise_sums.sum()
+
+        if total_count == 0:
+            return
+
+        # Calculate percentages
+        count_percentages = (counts / total_count * 100).to_dict()
+        mise_percentages = {}
+        if total_mise > 0:
+            mise_percentages = (mise_sums / total_mise * 100).to_dict()
+
+        # Build progress bar segments for COUNT
+        bar_segments_count = []
+        for i, category in enumerate(categories):
+            pct = count_percentages.get(category, 0)
+            if pct > 0:
+                if color_mapping:
+                    color = color_mapping.get(category, "#64748b")
+                elif colors:
+                    color = colors[i % len(colors)]
+                else:
+                    color = "#64748b"
+                segment = f"<div style='width: {pct}%; background-color: {color}; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600;'><span style='text-shadow: 0 1px 2px rgba(0,0,0,0.5);'>{pct:.1f}%</span></div>"
+                bar_segments_count.append(segment)
+
+        # Build legend items for COUNT
+        legend_items_count = []
+        for i, category in enumerate(categories):
+            pct = count_percentages.get(category, 0)
+            count = counts.get(category, 0)
+            if color_mapping:
+                color = color_mapping.get(category, "#64748b")
+            elif colors:
+                color = colors[i % len(colors)]
+            else:
+                color = "#64748b"
+            item = f"<div style='display: flex; align-items: center; margin: 4px 8px;'><div style='width: 12px; height: 12px; background-color: {color}; border-radius: 3px; margin-right: 6px;'></div><span style='color: #d1d4dc; font-size: 12px; font-weight: 600;'>{category}: {count} ({pct:.1f}%)</span></div>"
+            legend_items_count.append(item)
+
+        # Build progress bar segments for MISE
+        bar_segments_mise = []
+        for i, category in enumerate(categories):
+            pct = mise_percentages.get(category, 0)
+            if pct > 0:
+                if color_mapping:
+                    color = color_mapping.get(category, "#64748b")
+                elif colors:
+                    color = colors[i % len(colors)]
+                else:
+                    color = "#64748b"
+                segment = f"<div style='width: {pct}%; background-color: {color}; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600;'><span style='text-shadow: 0 1px 2px rgba(0,0,0,0.5);'>{pct:.1f}%</span></div>"
+                bar_segments_mise.append(segment)
+
+        # Build legend items for MISE
+        legend_items_mise = []
+        for i, category in enumerate(categories):
+            pct = mise_percentages.get(category, 0)
+            mise_val = mise_sums.get(category, 0)
+            if color_mapping:
+                color = color_mapping.get(category, "#64748b")
+            elif colors:
+                color = colors[i % len(colors)]
+            else:
+                color = "#64748b"
+            mise_formatted = f"{mise_val:,.0f}".replace(",", " ")
+            item = f"<div style='display: flex; align-items: center; margin: 4px 8px;'><div style='width: 12px; height: 12px; background-color: {color}; border-radius: 3px; margin-right: 6px;'></div><span style='color: #d1d4dc; font-size: 12px; font-weight: 600;'>{category}: {mise_formatted}€ ({pct:.1f}%)</span></div>"
+            legend_items_mise.append(item)
+
+        # Assemble final HTML with both bars
+        bar_html = f"""
+        <div style='margin: 20px 0;'>
+            <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px; font-weight: 600;'>{count_icon} {count_title}</div>
+            <div style='display: flex; width: 100%; height: 30px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.3);'>
+                {''.join(bar_segments_count)}
+            </div>
+            <div style='display: flex; justify-content: space-around; margin-top: 12px; flex-wrap: wrap;'>
+                {''.join(legend_items_count)}
+            </div>
+        </div>
+        
+        <div style='margin: 20px 0;'>
+            <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px; font-weight: 600;'>{mise_icon} {mise_title}</div>
+            <div style='display: flex; width: 100%; height: 30px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.3);'>
+                {''.join(bar_segments_mise)}
+            </div>
+            <div style='display: flex; justify-content: space-around; margin-top: 12px; flex-wrap: wrap;'>
+                {''.join(legend_items_mise)}
+            </div>
+        </div>
+        """
+
+        st.markdown(bar_html, unsafe_allow_html=True)
+
+    except Exception as e:
+        # Silently fail if there's an issue
+        pass
+
+
+def render_cote_distribution_bar(bets_data: pd.DataFrame) -> None:
+    """Render a colored progress bar showing the distribution of bets by odds ranges."""
+    render_distribution_bar(
+        bets_data=bets_data,
+        distribution_type="binned",
+        column_name="Cote",
+        bins=[0, 1.5, 2.0, 2.5, 3.0, 5, 100],
+        labels=["<1.5", "1.5-2.0", "2.0-2.5", "2.5-3.0", "3.0-5.0", "≥5.0"],
+        colors=["#10b981", "#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#ef4444"],
+        count_icon="📊",
+        count_title="Répartition du nombre de paris par cote",
+        mise_icon="💰",
+        mise_title="Répartition des mises par cote",
+    )
+
+
+def render_marge_distribution_bar(bets_data: pd.DataFrame) -> None:
+    """Render a colored progress bar showing the distribution of bets by expected margin (ROI attendu)."""
+
+    def calculate_roi_attendu(df):
+        """Calculate ROI attendu = (Cote / Prédiction - 1) * 100"""
+        cote_vals = pd.to_numeric(df["Cote"], errors="coerce")
+        pred_vals = pd.to_numeric(df["Prédiction"], errors="coerce")
+        roi_att = (cote_vals / pred_vals - 1) * 100
+        return roi_att.fillna(0)
+
+    render_distribution_bar(
+        bets_data=bets_data,
+        distribution_type="binned",
+        bins=[-100, 0, 2, 5, 10, 20, 100],
+        labels=["<0%", "0-2%", "2-5%", "5-10%", "10-20%", "≥20%"],
+        colors=["#10b981", "#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#ef4444"],
+        count_icon="📈",
+        count_title="Répartition du nombre de paris par ROI attendu",
+        mise_icon="💵",
+        mise_title="Répartition des mises par ROI attendu",
+        calculate_bins_fn=calculate_roi_attendu,
+    )
+
+
+def render_surface_distribution_bar(bets_data: pd.DataFrame) -> None:
+    """Render a colored progress bar showing the distribution of bets by surface type."""
+    render_distribution_bar(
+        bets_data=bets_data,
+        distribution_type="categorical",
+        column_name="Surface",
+        color_mapping={
+            "Dur": "#3772d1",
+            "Terre battue": "#b45715",
+            "Gazon": "#22c55e",
+            "Carpet": "#8b5cf6",
+            "Indoor Hard": "#6366f1",
+        },
+        count_icon="🎾",
+        count_title="Répartition du nombre de paris par surface",
+        mise_icon="🏟️",
+        mise_title="Répartition des mises par surface",
+    )
+
+
+def render_competition_distribution_bar(bets_data: pd.DataFrame) -> None:
+    """Render a colored progress bar showing the distribution of bets by competition/tournament."""
+    render_distribution_bar(
+        bets_data=bets_data,
+        distribution_type="categorical",
+        column_name="Compétition",
+        color_mapping={
+            "atp": "#10b981",  # Vert émeraude pour ATP (masculin)
+            "Atp": "#10b981",  # Support both cases
+            "wta": "#ec4899",  # Rose pour WTA (féminin)
+            "Wta": "#ec4899",  # Support both cases
+            "doubles": "#8b5cf6",  # Violet pour Doubles (mixte)
+            "Doubles": "#8b5cf6",  # Support both cases
+            "challenger": "#6366f1",  # Bleu indigo pour Challenger
+            "Challenger": "#6366f1",  # Support both cases
+        },
+        count_icon="🏆",
+        count_title="Répartition du nombre de paris par compétition",
+        mise_icon="💸",
+        mise_title="Répartition des mises par compétition",
+    )

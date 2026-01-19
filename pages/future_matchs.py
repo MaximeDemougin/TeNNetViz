@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import timedelta
 
 from data import load_future_matchs
+from pages.components.charts import sort_competitions
 
 
 # Cache the results to avoid reloading on every user interaction / rerun.
@@ -32,7 +33,8 @@ try:
     # normalize
     df["tourney_name"] = df["tourney_name"].astype(str)
     df["compet"] = df["compet"].astype(str).str.title()
-    comp_options = sorted(df["compet"].dropna().unique())
+    comp_options = df["compet"].dropna().unique().tolist()
+    comp_options = sort_competitions(comp_options)  # Sort in ATP, WTA, Doubles order
     tourney_options = sorted(df["tourney_name"].dropna().unique())
 
     # Use sidebar for filters so they don't span the full page

@@ -1,5 +1,12 @@
 import streamlit as st
 import pandas as pd
+from pages.components.charts import (
+    render_cote_distribution_bar,
+    render_marge_distribution_bar,
+    render_surface_distribution_bar,
+    render_competition_distribution_bar,
+    sort_competitions,
+)
 
 
 def render_grouped_table(bets_data: pd.DataFrame) -> None:
@@ -230,9 +237,11 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
                 Total_Gains=("Gains net", "sum"),
                 Roi=(
                     "Gains net",
-                    lambda x: (x.sum() / df_display.loc[x.index, "Mise"].sum() * 100)
-                    if df_display.loc[x.index, "Mise"].sum() > 0
-                    else 0,
+                    lambda x: (
+                        (x.sum() / df_display.loc[x.index, "Mise"].sum() * 100)
+                        if df_display.loc[x.index, "Mise"].sum() > 0
+                        else 0
+                    ),
                 ),
                 Resultat_attendu=("Marge attendue", "sum"),
                 Avg_Cote=("Cote", "mean"),
@@ -278,18 +287,35 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
                 )
                 grouped = grouped.sort_values(by=group_col, ascending=False)
             except Exception:
-                grouped = grouped.set_index(group_col).reindex(order_marge[::-1]).reset_index()
+                grouped = (
+                    grouped.set_index(group_col)
+                    .reindex(order_marge[::-1])
+                    .reset_index()
+                )
+
+        if group_by == "Compétition":
+            # Sort competitions in standard order: ATP, WTA, Doubles
+            sorted_comps = sort_competitions(grouped[group_col].unique().tolist())
+            try:
+                grouped[group_col] = pd.Categorical(
+                    grouped[group_col], categories=sorted_comps, ordered=True
+                )
+                grouped = grouped.sort_values(by=group_col)
+            except Exception:
+                grouped = (
+                    grouped.set_index(group_col).reindex(sorted_comps).reset_index()
+                )
 
         display_df = grouped[
             [
                 group_col,
                 "Count",
                 "Avg_Cote",
-                "ROI_attendu",
                 "Total_Mises",
-                "Resultat_attendu",
                 "Total_Gains",
                 "Roi",
+                "Resultat_attendu",
+                "ROI_attendu",
             ]
         ].copy()
 
@@ -464,3 +490,19 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
                             st.plotly_chart(fig_mises, width="stretch")
         except Exception:
             pass
+
+    # Add colored distribution bar for bets by odds only when "Cote" grouping is selected
+    if group_by == "Cote":
+        render_cote_distribution_bar(bets_data)
+
+    # Add colored distribution bar for bets by expected margin only when "Marge" grouping is selected
+    if group_by == "Marge":
+        render_marge_distribution_bar(bets_data)
+
+    # Add colored distribution bar for bets by surface only when "Surface" grouping is selected
+    if group_by == "Surface":
+        render_surface_distribution_bar(bets_data)
+
+    # Add colored distribution bar for bets by competition only when "Compétition" grouping is selected
+    if group_by == "Compétition":
+        render_competition_distribution_bar(bets_data)

@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from data import prepare_bets_data
 from pages.components.metrics import render_metrics
-from pages.components.charts import render_cumulative_chart
+from pages.components.charts import render_cumulative_chart, sort_competitions
 from pages.components.match_card import render_match_info
 from pages.components.grouped_table import render_grouped_table
 
@@ -97,7 +97,8 @@ if st.session_state.get("logged_in", False):
 
         # Competition filter
         try:
-            comps = sorted(bets_original["Compétition"].dropna().unique().tolist())
+            comps = bets_original["Compétition"].dropna().unique().tolist()
+            comps = sort_competitions(comps)  # Sort in ATP, WTA, Doubles order
         except Exception:
             comps = []
         comp_selected = st.sidebar.multiselect(
