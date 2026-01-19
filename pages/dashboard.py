@@ -94,6 +94,22 @@ if st.session_state.get("logged_in", False):
             )
         except Exception:
             pass
+        # Date range picker
+        try:
+            min_date = bets_original["Date"].min().date()
+            max_date = bets_original["Date"].max().date()
+        except Exception:
+            import datetime
+
+            min_date = datetime.date(2000, 1, 1)
+            max_date = datetime.date.today()
+
+        date_range = st.sidebar.date_input(
+            "Filtrer - Période",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date,
+        )
 
         # Competition filter
         try:
@@ -121,22 +137,43 @@ if st.session_state.get("logged_in", False):
             value=(float(cote_min), float(cote_max)),
             step=0.01,
         )
-
-        # Date range picker
+        # ROI attendu (Marge) slider
         try:
-            min_date = bets_original["Date"].min().date()
-            max_date = bets_original["Date"].max().date()
+            # Calculate ROI attendu for all bets
+            cote_vals_for_roi = pd.to_numeric(bets_original["Cote"], errors="coerce")
+            pred_vals_for_roi = pd.to_numeric(
+                bets_original["Prédiction"], errors="coerce"
+            )
+            roi_attendu_vals = (
+                (cote_vals_for_roi / pred_vals_for_roi - 1) * 100
+            ).dropna()
+            roi_min = (
+                float(roi_attendu_vals.min()) if len(roi_attendu_vals) > 0 else -10.0
+            )
+            roi_max = (
+                float(roi_attendu_vals.max()) if len(roi_attendu_vals) > 0 else 50.0
+            )
         except Exception:
-            import datetime
+            roi_min, roi_max = -10.0, 50.0
+        roi_range = st.sidebar.slider(
+            "Filtrer - ROI attendu (%)",
+            min_value=float(roi_min),
+            max_value=float(roi_max),
+            value=(float(roi_min), float(roi_max)),
+            step=0.5,
+        )
 
-            min_date = datetime.date(2000, 1, 1)
-            max_date = datetime.date.today()
+        # Surface filter with multiselect buttons
+        try:
+            surfaces = bets_original["Surface"].dropna().unique().tolist()
+            surfaces = sorted(surfaces)  # Sort alphabetically
+        except Exception:
+            surfaces = []
 
-        date_range = st.sidebar.date_input(
-            "Filtrer - Période",
-            value=(min_date, max_date),
-            min_value=min_date,
-            max_value=max_date,
+        surface_selected = st.sidebar.multiselect(
+            "Filtrer - Surface",
+            options=surfaces,
+            default=surfaces if len(surfaces) > 0 else None,
         )
 
         # Apply filters
@@ -181,6 +218,28 @@ if st.session_state.get("logged_in", False):
             filtered = filtered[
                 (filtered["Date"] >= start_dt) & (filtered["Date"] <= end_dt)
             ]
+        except Exception:
+            pass
+
+        # Apply ROI attendu filter
+        try:
+            roi_min_filter, roi_max_filter = roi_range
+            # Calculate ROI attendu for filtered data
+            cote_vals_filtered = pd.to_numeric(filtered["Cote"], errors="coerce")
+            pred_vals_filtered = pd.to_numeric(filtered["Prédiction"], errors="coerce")
+            roi_attendu_filtered = (cote_vals_filtered / pred_vals_filtered - 1) * 100
+
+            filtered = filtered[
+                (roi_attendu_filtered >= float(roi_min_filter))
+                & (roi_attendu_filtered <= float(roi_max_filter))
+            ]
+        except Exception:
+            pass
+
+        # Apply surface filter
+        try:
+            if surface_selected and len(surface_selected) > 0:
+                filtered = filtered[filtered["Surface"].isin(surface_selected)]
         except Exception:
             pass
 

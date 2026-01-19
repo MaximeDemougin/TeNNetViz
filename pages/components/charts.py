@@ -1,6 +1,7 @@
 import streamlit as st
 import plotly.express as px
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 
 
@@ -598,29 +599,64 @@ def render_cote_raw_histogram(bets_data: pd.DataFrame, nbins: int = 50) -> None:
                     return colors_map[i]
             return colors_map[-1]
 
-        df_copy["cote_color"] = cote_vals.apply(get_color)
+        # Create histogram data manually for better control over bins
+        hist_values, bin_edges = np.histogram(cote_vals, bins=nbins)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-        # Create histogram with colored bars
-        fig = px.histogram(
-            df_copy,
-            x="Cote",
-            nbins=nbins,
-            color="cote_color",
-            color_discrete_map={color: color for color in colors_map},
-            labels={"Cote": "Cote", "count": "Nombre de paris"},
-        )
+        # Assign colors to bins based on their center values
+        bin_colors = [get_color(center) for center in bin_centers]
 
-        fig.update_traces(
-            marker_line_color="rgba(255,255,255,0.2)",
-            marker_line_width=1,
-        )
+        # Create figure with bar traces
+        fig = go.Figure()
 
-        # Update hover template for all traces
-        fig.for_each_trace(
-            lambda trace: trace.update(
-                hovertemplate="Cote: %{x:.2f}<br>Nombre: %{y}<extra></extra>"
+        # Add bars grouped by color for better organization
+        for color in colors_map:
+            # Get indices where this color is used
+            color_indices = [i for i, c in enumerate(bin_colors) if c == color]
+            if len(color_indices) > 0:
+                fig.add_trace(
+                    go.Bar(
+                        x=[bin_centers[i] for i in color_indices],
+                        y=[hist_values[i] for i in color_indices],
+                        marker_color=color,
+                        marker_line_color="rgba(255,255,255,0.2)",
+                        marker_line_width=1,
+                        width=(bin_edges[1] - bin_edges[0]) * 0.9,
+                        hovertemplate="Cote: %{x:.2f}<br>Nombre: %{y}<extra></extra>",
+                        showlegend=False,
+                    )
+                )
+
+        # Add smoothed line (moving average)
+        try:
+            # Reuse histogram data already calculated above
+            # Apply smoothing using convolution (moving average)
+            # Adaptive window size: better scaling for different nbins
+            # More bins = larger window to maintain smoothness
+            window_size = max(5, min(nbins // 5, 20))  # Between 5 and 20
+            kernel = np.ones(window_size) / window_size
+            smoothed_values = np.convolve(hist_values, kernel, mode="same")
+
+            # Apply secondary smoothing for very smooth curve
+            if nbins > 30:
+                window_size_2 = max(3, window_size // 2)
+                kernel_2 = np.ones(window_size_2) / window_size_2
+                smoothed_values = np.convolve(smoothed_values, kernel_2, mode="same")
+
+            # Add smoothed line trace
+            fig.add_trace(
+                go.Scatter(
+                    x=bin_centers,
+                    y=smoothed_values,
+                    mode="lines",
+                    name="Tendance lissée",
+                    line=dict(color="#fbbf24", width=3, shape="spline"),
+                    hovertemplate="Cote: %{x:.2f}<br>Tendance: %{y:.1f}<extra></extra>",
+                    showlegend=True,
+                )
             )
-        )
+        except Exception:
+            pass
 
         fig.update_layout(
             plot_bgcolor="rgba(0,0,0,0)",
@@ -635,7 +671,16 @@ def render_cote_raw_histogram(bets_data: pd.DataFrame, nbins: int = 50) -> None:
                 x=0.5,
                 xanchor="center",
             ),
-            showlegend=False,
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#d1d4dc"),
+            ),
         )
 
         fig.update_xaxes(gridcolor="rgba(100,100,120,0.2)")
@@ -679,30 +724,64 @@ def render_marge_raw_histogram(bets_data: pd.DataFrame, nbins: int = 50) -> None
                     return colors_map[i]
             return colors_map[-1]
 
-        df_copy["roi_color"] = roi_att.apply(get_color)
-        df_copy["ROI_attendu"] = roi_att
+        # Create histogram data manually for better control over bins
+        hist_values, bin_edges = np.histogram(roi_att, bins=nbins)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-        # Create histogram with colored bars
-        fig = px.histogram(
-            df_copy,
-            x="ROI_attendu",
-            nbins=nbins,
-            color="roi_color",
-            color_discrete_map={color: color for color in colors_map},
-            labels={"ROI_attendu": "ROI attendu (%)", "count": "Nombre de paris"},
-        )
+        # Assign colors to bins based on their center values
+        bin_colors = [get_color(center) for center in bin_centers]
 
-        fig.update_traces(
-            marker_line_color="rgba(255,255,255,0.2)",
-            marker_line_width=1,
-        )
+        # Create figure with bar traces
+        fig = go.Figure()
 
-        # Update hover template for all traces
-        fig.for_each_trace(
-            lambda trace: trace.update(
-                hovertemplate="ROI attendu: %{x:.1f}%<br>Nombre: %{y}<extra></extra>"
+        # Add bars grouped by color for better organization
+        for color in colors_map:
+            # Get indices where this color is used
+            color_indices = [i for i, c in enumerate(bin_colors) if c == color]
+            if len(color_indices) > 0:
+                fig.add_trace(
+                    go.Bar(
+                        x=[bin_centers[i] for i in color_indices],
+                        y=[hist_values[i] for i in color_indices],
+                        marker_color=color,
+                        marker_line_color="rgba(255,255,255,0.2)",
+                        marker_line_width=1,
+                        width=(bin_edges[1] - bin_edges[0]) * 0.9,
+                        hovertemplate="ROI attendu: %{x:.1f}%<br>Nombre: %{y}<extra></extra>",
+                        showlegend=False,
+                    )
+                )
+
+        # Add smoothed line (moving average)
+        try:
+            # Reuse histogram data already calculated above
+            # Apply smoothing using convolution (moving average)
+            # Adaptive window size: better scaling for different nbins
+            # More bins = larger window to maintain smoothness
+            window_size = max(5, min(nbins // 5, 20))  # Between 5 and 20
+            kernel = np.ones(window_size) / window_size
+            smoothed_values = np.convolve(hist_values, kernel, mode="same")
+
+            # Apply secondary smoothing for very smooth curve
+            if nbins > 30:
+                window_size_2 = max(3, window_size // 2)
+                kernel_2 = np.ones(window_size_2) / window_size_2
+                smoothed_values = np.convolve(smoothed_values, kernel_2, mode="same")
+
+            # Add smoothed line trace
+            fig.add_trace(
+                go.Scatter(
+                    x=bin_centers,
+                    y=smoothed_values,
+                    mode="lines",
+                    name="Tendance lissée",
+                    line=dict(color="#fbbf24", width=3, shape="spline"),
+                    hovertemplate="ROI attendu: %{x:.1f}%<br>Tendance: %{y:.1f}<extra></extra>",
+                    showlegend=True,
+                )
             )
-        )
+        except Exception:
+            pass
 
         fig.update_layout(
             plot_bgcolor="rgba(0,0,0,0)",
@@ -717,7 +796,16 @@ def render_marge_raw_histogram(bets_data: pd.DataFrame, nbins: int = 50) -> None
                 x=0.5,
                 xanchor="center",
             ),
-            showlegend=False,
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#d1d4dc"),
+            ),
         )
 
         fig.update_xaxes(gridcolor="rgba(100,100,120,0.2)")
