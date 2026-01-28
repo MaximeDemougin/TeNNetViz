@@ -42,58 +42,168 @@ def sort_competitions(series_or_list):
     return sorted_values
 
 
-def render_cumulative_chart(bets_data: pd.DataFrame) -> list:
+def render_cumulative_chart(bets_data: pd.DataFrame, mode: str = "match") -> list:
     """Render cumulative gains line chart and return the selected points list (may be empty).
 
-    Building traces separately and adding the margin trace first ensures the
-    gains trace is on top and receives selection events. If the user selected
-    a row in the grouped table, it will be stored in st.session_state["selected_from_table"]
-    and we pre-select that point on the chart using the trace.selectedpoints property.
+    mode: one of 'match' (per-match index), 'horaire' (use Date/time as x-axis),
+    or 'jour' (aggregate per day). The function will attempt to map selections
+    back to the table where possible. In 'jour' mode chart selections are mapped
+    to a date value in session_state["selected_from_chart"].
     """
-    bets_data_reset = bets_data.reset_index(drop=True)
-    bets_data_reset["Match_Num"] = range(len(bets_data_reset))
 
-    # Ensure the cumulative margin column exists
-    bets_data_reset["Cumulative_Marge"] = bets_data_reset["Marge attendue"].cumsum()
+    # Normalize mode
+    mode = (mode or "").lower()
 
-    # Build gains trace (with markers) using px for convenience, extract its trace
-    gains_fig = px.line(
-        bets_data_reset,
-        x="Match_Num",
-        y="Cumulative Gains",
-        markers=True,
-        labels={"Match_Num": "Match #", "Cumulative Gains": "Gains nets cumulés"},
-    )
-    gains_trace = gains_fig.data[0]
-    gains_trace.update(
-        name="Gains",
-        line=dict(color="#32b296", width=2),
-        marker=dict(size=1, color="#32b296"),
-    )
+    # Default plotting dataframe (per-point)
+    plot_df = None
+    x_col = "Match_Num"
+
+    if mode == "jour":
+        # Aggregate per day
+        if "Date" not in bets_data.columns:
+            # fallback to match mode if no Date
+            mode = "match"
+        else:
+            try:
+                df = bets_data.copy()
+                df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+                df = df.dropna(subset=["Date"])  # drop rows without valid date
+                if df.empty:
+                    mode = "match"
+                else:
+                    df["Date_only"] = df["Date"].dt.normalize()
+                    grouped = (
+                        df.groupby("Date_only", sort=True)
+                        .agg({"Gains net": "sum", "Marge attendue": "sum"})
+                        .reset_index()
+                    )
+                    grouped["Cumulative Gains"] = grouped["Gains net"].cumsum()
+                    grouped["Cumulative_Marge"] = grouped["Marge attendue"].cumsum()
+                    plot_df = grouped.rename(columns={"Date_only": "Date"})
+                    x_col = "Date"
+            except Exception:
+                mode = "match"
+
+    if mode in ("match", "horaire"):
+        # reset_index to capture the original index as a column; keep that mapping
+        bets_data_reset = bets_data.reset_index()
+        # If `_orig_index` not provided, use the first column (previous index)
+        if "_orig_index" not in bets_data_reset.columns:
+            bets_data_reset["_orig_index"] = bets_data_reset.iloc[:, 0]
+
+        # sequential match number for plotting when not using Date
+        bets_data_reset["Match_Num"] = range(len(bets_data_reset))
+
+        # Ensure the cumulative margin column exists (safe get)
+        bets_data_reset["Cumulative_Marge"] = bets_data_reset.get(
+            "Marge attendue", pd.Series([0] * len(bets_data_reset))
+        ).cumsum()
+
+        if mode == "horaire" and "Date" in bets_data_reset.columns:
+            try:
+                bets_data_reset["Date"] = pd.to_datetime(
+                    bets_data_reset["Date"], errors="coerce"
+                )
+                bets_data_reset = bets_data_reset.sort_values(
+                    by="Date", ascending=True
+                ).reset_index(drop=True)
+                # recompute Match_Num after sorting
+                bets_data_reset["Match_Num"] = range(len(bets_data_reset))
+                x_col = "Date"
+            except Exception:
+                x_col = "Match_Num"
+
+        plot_df = bets_data_reset
+
+    # Ensure a fallback plot_df exists and normalize expected columns
+    if plot_df is None:
+        plot_df = bets_data.reset_index()
+    if "_orig_index" not in plot_df.columns:
+        plot_df["_orig_index"] = plot_df.iloc[:, 0]
+    if "Match_Num" not in plot_df.columns:
+        plot_df["Match_Num"] = range(len(plot_df))
+    if "Cumulative_Marge" not in plot_df.columns:
+        plot_df["Cumulative_Marge"] = plot_df.get(
+            "Marge attendue", pd.Series([0] * len(plot_df))
+        ).cumsum()
+
+    # Build gains trace (explicit go.Scatter) to avoid creating duplicate traces
+    try:
+        gains_trace = go.Scatter(
+            x=(
+                plot_df[x_col].tolist()
+                if x_col in plot_df.columns
+                else list(range(len(plot_df)))
+            ),
+            y=(
+                plot_df["Cumulative Gains"].tolist()
+                if "Cumulative Gains" in plot_df.columns
+                else [0] * len(plot_df)
+            ),
+            mode="lines+markers",
+            name="Gains",
+            line=dict(color="#32b296", width=2),
+            # Keep markers present for selection but make them invisible by default
+            marker=dict(size=0, color="#32b296", opacity=0),
+        )
+    except Exception:
+        # Fallback to an empty trace if something goes wrong
+        gains_trace = go.Scatter(x=[], y=[], mode="lines+markers", name="Gains")
 
     # If a table selection exists in session_state, mark that point as selected
     table_sel = st.session_state.get("selected_from_table")
     if table_sel is not None:
         try:
-            if 0 <= int(table_sel) < len(bets_data_reset):
-                gains_trace.update(selectedpoints=[int(table_sel)])
+            if mode == "jour":
+                # map original row index to its date, then find aggregated position
+                try:
+                    orig_row = bets_data.loc[table_sel]
+                    row_date = pd.to_datetime(orig_row["Date"], errors="coerce")
+                    if not pd.isna(row_date):
+                        target_date = row_date.normalize()
+                        mask = plot_df["Date"] == target_date
+                        if mask.any():
+                            pos = int(mask[mask].index[0])
+                            gains_trace.update(selectedpoints=[pos])
+                except Exception:
+                    pass
+            else:
+                try:
+                    mask = plot_df["_orig_index"] == table_sel
+                except Exception:
+                    mask = pd.Series([False] * len(plot_df))
+                if not mask.any():
+                    try:
+                        mask = plot_df["_orig_index"] == int(table_sel)
+                    except Exception:
+                        pass
+                if mask.any():
+                    pos = int(mask[mask].index[0])
+                    gains_trace.update(selectedpoints=[pos])
         except Exception:
             pass
 
-    # Build margin trace (no markers, thin dashed white)
-    marge_fig = px.line(
-        bets_data_reset,
-        x="Match_Num",
-        y="Cumulative_Marge",
-        labels={"Match_Num": "Match #", "Cumulative_Marge": "Attendu cumulé"},
-    )
-    marge_trace = marge_fig.data[0]
-    marge_trace.update(
-        name="Attendu",
-        line=dict(color="#ffffff", width=1, dash="dash"),
-        marker=dict(size=0),
-        opacity=0.9,
-    )
+    # Build margin trace (explicit go.Scatter): no markers, thin dashed white
+    try:
+        marge_trace = go.Scatter(
+            x=(
+                plot_df[x_col].tolist()
+                if x_col in plot_df.columns
+                else list(range(len(plot_df)))
+            ),
+            y=(
+                plot_df["Cumulative_Marge"].tolist()
+                if "Cumulative_Marge" in plot_df.columns
+                else [0] * len(plot_df)
+            ),
+            mode="lines",
+            name="Attendu",
+            line=dict(color="#ffffff", width=1, dash="dash"),
+            marker=dict(size=0),
+            opacity=0.9,
+        )
+    except Exception:
+        marge_trace = go.Scatter(x=[], y=[], mode="lines", name="Attendu")
 
     # Assemble figure with margin first, gains last (so gains receives selection)
     fig = go.Figure()
@@ -128,6 +238,13 @@ def render_cumulative_chart(bets_data: pd.DataFrame) -> list:
         margin=dict(t=40, b=20, l=40, r=40),
     )
 
+    # If using date/time on x-axis, ensure axis is shown as date
+    try:
+        if x_col == "Date":
+            fig.update_xaxes(type="date", tickformat="%d %b %Y\n%H:%M")
+    except Exception:
+        pass
+
     # Optionally show legend title
     try:
         fig.update_layout(legend_title_text="Légende")
@@ -153,7 +270,14 @@ def render_cumulative_chart(bets_data: pd.DataFrame) -> list:
         if selected and len(selected) > 0:
             try:
                 pt_idx = int(selected[0].get("point_index"))
-                st.session_state["selected_from_chart"] = pt_idx
+                # map point index back to original index value
+                try:
+                    orig_idx = bets_data_reset.iloc[pt_idx]["_orig_index"]
+                    st.session_state["selected_from_chart"] = int(orig_idx)
+                except Exception:
+                    # fallback: store the point index
+                    st.session_state["selected_from_chart"] = pt_idx
+
                 # clear table selection so chart selection takes precedence
                 if st.session_state.get("selected_from_table") is not None:
                     del st.session_state["selected_from_table"]

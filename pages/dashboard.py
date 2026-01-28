@@ -396,7 +396,17 @@ if st.session_state.get("logged_in", False):
     with col1:
         # Section title and cumulative chart component
         st.markdown("### 📈 Évolution des gains nets")
-        selected = render_cumulative_chart(bets_data)
+        # Allow switching between plotting by match index, horaire (Date/time) or jour (per day)
+        view_mode = st.selectbox(
+            "Afficher",
+            ["Par match", "Par horaire", "Par jour"],
+            index=0,
+            label_visibility="collapsed",
+        )
+        mode_map = {"Par match": "match", "Par horaire": "horaire", "Par jour": "jour"}
+        selected = render_cumulative_chart(
+            bets_data, mode=mode_map.get(view_mode, "match")
+        )
 
     with col3:
         # Section title and match info
