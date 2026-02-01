@@ -51,6 +51,11 @@ def render_cumulative_chart(bets_data: pd.DataFrame, mode: str = "match") -> lis
     to a date value in session_state["selected_from_chart"].
     """
 
+    # Check if bets_data is empty
+    if bets_data.empty:
+        st.info("Aucune donnée à afficher")
+        return []
+
     # Normalize mode
     mode = (mode or "").lower()
 
@@ -447,20 +452,20 @@ def render_distribution_bar(
         <div style='margin: 20px 0;'>
             <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px; font-weight: 600;'>{count_icon} {count_title}</div>
             <div style='display: flex; width: 100%; height: 30px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.3);'>
-                {''.join(bar_segments_count)}
+                {"".join(bar_segments_count)}
             </div>
             <div style='display: flex; justify-content: space-around; margin-top: 12px; flex-wrap: wrap;'>
-                {''.join(legend_items_count)}
+                {"".join(legend_items_count)}
             </div>
         </div>
         
         <div style='margin: 20px 0;'>
             <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px; font-weight: 600;'>{mise_icon} {mise_title}</div>
             <div style='display: flex; width: 100%; height: 30px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.3);'>
-                {''.join(bar_segments_mise)}
+                {"".join(bar_segments_mise)}
             </div>
             <div style='display: flex; justify-content: space-around; margin-top: 12px; flex-wrap: wrap;'>
-                {''.join(legend_items_mise)}
+                {"".join(legend_items_mise)}
             </div>
         </div>
         """

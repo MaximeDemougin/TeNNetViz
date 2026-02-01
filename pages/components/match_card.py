@@ -4,6 +4,11 @@ import pandas as pd
 
 def render_match_info(bets_data: pd.DataFrame, selected: list) -> None:
     """Render the right-hand Match info card based on selection or last match."""
+    # Check if bets_data is empty
+    if bets_data.empty:
+        st.info("Aucun match à afficher")
+        return
+
     try:
         if selected and len(selected) > 0:
             idx = selected[0]["point_index"]
@@ -11,7 +16,9 @@ def render_match_info(bets_data: pd.DataFrame, selected: list) -> None:
         else:
             match = bets_data.iloc[-1]
     except Exception:
-        match = bets_data.iloc[-1]
+        # If there's any error accessing the match, show message and return
+        st.info("Aucun match à afficher")
+        return
 
     gain_color = "#32b296" if match["Gains net"] > 0 else "#e04e4e"
     outcome_text = "Gagné" if match["Gains net"] > 0 else "Perdu"

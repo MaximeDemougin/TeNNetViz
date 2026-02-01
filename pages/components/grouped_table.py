@@ -19,6 +19,11 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
     This function encapsulates the long grouping/table/chart logic from the
     original dashboard file.
     """
+    # Check if bets_data is empty
+    if bets_data.empty:
+        st.info("Aucune donnée à afficher")
+        return
+
     group_by = st.radio(
         "Grouper par :",
         options=["Compétition", "Surface", "Cote", "Marge", "Mois", "Jour", "Match"],

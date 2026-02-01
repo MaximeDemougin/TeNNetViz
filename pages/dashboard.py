@@ -73,12 +73,68 @@ if st.session_state.get("logged_in", False):
             )
             st.session_state["bets_data_user_id"] = user_id
         except Exception:
-            st.session_state["bets_data_cached"] = pd.DataFrame()
+            # Create empty DataFrame with proper schema on error
+            cols = [
+                "ID_MATCH",
+                "Match",
+                "Date",
+                "Compétition",
+                "Level",
+                "Round",
+                "Surface",
+                "Mise",
+                "Cote",
+                "Prédiction",
+                "Gains net",
+                "Marge attendue",
+                "Cumulative Gains",
+            ]
+            empty_df = pd.DataFrame(columns=cols)
+            for num_col in [
+                "Mise",
+                "Cote",
+                "Prédiction",
+                "Gains net",
+                "Marge attendue",
+                "Cumulative Gains",
+            ]:
+                empty_df[num_col] = empty_df[num_col].astype(float)
+            st.session_state["bets_data_cached"] = empty_df
 
 # For example, display user-specific data if logged in
 if st.session_state.get("logged_in", False):
     # Use cached data if available (loaded once per user above)
     bets_data = st.session_state.get("bets_data_cached", pd.DataFrame())
+
+    # Ensure bets_data has the proper schema even if empty
+    if bets_data.empty:
+        # Create empty DataFrame with expected schema
+        cols = [
+            "ID_MATCH",
+            "Match",
+            "Date",
+            "Compétition",
+            "Level",
+            "Round",
+            "Surface",
+            "Mise",
+            "Cote",
+            "Prédiction",
+            "Gains net",
+            "Marge attendue",
+            "Cumulative Gains",
+        ]
+        bets_data = pd.DataFrame(columns=cols)
+        # Ensure numeric columns have proper dtype
+        for num_col in [
+            "Mise",
+            "Cote",
+            "Prédiction",
+            "Gains net",
+            "Marge attendue",
+            "Cumulative Gains",
+        ]:
+            bets_data[num_col] = bets_data[num_col].astype(float)
 
     # --- Sidebar filters: competition, cote range, date range ---
     try:

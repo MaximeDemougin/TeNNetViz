@@ -138,9 +138,7 @@ def load_bets(user_id: int):
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         WHERE match_settled in (1,2) and score != 'W/O' and status = 1"""
     bets_data = read_sql_query(BDD, query_bets)
-    bets_data = bets_data[
-        (bets_data["ID_USER"] == user_id) & (bets_data["tourney_date"] >= "2026-01-01")
-    ]
+    bets_data = bets_data[bets_data["ID_USER"] == user_id]
     bets_data.sort_values(by="tourney_date", ascending=True, inplace=True)
     bets_data.reset_index(drop=True, inplace=True)
     return bets_data
@@ -155,6 +153,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         bets_data = load_bets(user_id)
     else:
         bets_data = load_inplay_bets(user_id)
+    print(f"Loaded {len(bets_data)} bets for user {user_id} (finished={finished})")
 
     # Defensive: if no data returned, provide an empty dataframe with expected schema
     if bets_data is None or bets_data.empty:
@@ -171,15 +170,22 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             "Prédiction",
             "Gains net",
             "Marge attendue",
+            "Cumulative Gains",
         ]
         empty_df = pd.DataFrame(columns=cols)
         # Ensure numeric columns exist with float dtype
-        for num_col in ["Mise", "Cote", "Prédiction", "Gains net", "Marge attendue"]:
+        for num_col in [
+            "Mise",
+            "Cote",
+            "Prédiction",
+            "Gains net",
+            "Marge attendue",
+            "Cumulative Gains",
+        ]:
             empty_df[num_col] = empty_df.get(num_col, pd.Series(dtype=float)).astype(
                 float
             )
-        # Add cumulative column expected by prep_candle_data
-        empty_df["Cumulative Gains"] = empty_df["Gains net"].cumsum()
+        print("No bets data found; returning empty DataFrame.")
         return empty_df
 
     bets_data["Match"] = bets_data["winner_name"] + " - " + bets_data["loser_name"]
@@ -245,7 +251,8 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             prepared_bets["tourney_date"], errors="coerce"
         )
         prepared_bets["Horaire"] = prepared_bets["tourney_date"].dt.strftime("%H:%M")
-    except Exception:
+    except Exception as e:
+        print(f"Error extracting time from tourney_date: {e}")
         prepared_bets["Horaire"] = ""
 
     # Map surface names to French and normalize capitalization
@@ -259,7 +266,8 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         prepared_bets["surface"] = prepared_bets["surface"].map(
             lambda v: surface_map.get(v, v)
         )
-    except Exception:
+    except Exception as e:
+        print(f"Error mapping surface names: {e}")
         pass
 
     # Map round codes to French labels
@@ -279,7 +287,8 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         prepared_bets["round"] = prepared_bets["round"].map(
             lambda r: round_map.get(r, r)
         )
-    except Exception:
+    except Exception as e:
+        print(f"Error mapping round names: {e}")
         pass
 
     # Map tourney level codes to descriptive labels
@@ -299,8 +308,8 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         prepared_bets["tourney_level"] = prepared_bets["tourney_level"].map(
             lambda lvl: level_map.get(lvl, lvl)
         )
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error mapping tourney level names: {e}")
 
     prepared_bets["real_odds"] = prepared_bets["real_odds"].round(3)
     prepared_bets["cote_pred"] = prepared_bets["cote_pred"].round(3)
@@ -331,29 +340,54 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         valid_bets = prepared_bets[~prepared_bets["voided"]].copy()
     else:
         valid_bets = prepared_bets.copy()
-    grouped_bets = (
-        valid_bets.groupby(
-            ["ID_MATCH", "Match", "player_bet"]
-        )  # use valid_bets instead of prepared_bets
-        .agg(
-            {
-                "Date": "first",
-                "Compétition": "first",
-                "Level": "first",
-                "Round": "first",
-                "Surface": "first",
-                "Score": "first",
-                "Mise": "sum",
-                "Cote": lambda x: np.average(
-                    x, weights=valid_bets.loc[x.index, "Mise"]
-                ),
-                "Prédiction": "mean",
-                "Gains net": "sum",
-                "Marge attendue": "sum",
-            }
+    print(f"Loaded {len(valid_bets)} valid bets for user {user_id}.")
+
+    # Define a function to calculate weighted average for Cote
+    def weighted_avg(group):
+        """Calculate weighted average of Cote using Mise as weights"""
+        weights = group["Mise"]
+        if weights.sum() == 0:
+            # If all weights are zero, return simple mean
+            return group["Cote"].mean()
+        return np.average(group["Cote"], weights=weights)
+
+    try:
+        # First aggregate without the weighted Cote
+        grouped_bets = (
+            valid_bets.groupby(["ID_MATCH", "Match", "player_bet"])
+            .agg(
+                {
+                    "Date": "first",
+                    "Compétition": "first",
+                    "Level": "first",
+                    "Round": "first",
+                    "Surface": "first",
+                    "Score": "first",
+                    "Mise": "sum",
+                    "Prédiction": "mean",
+                    "Gains net": "sum",
+                    "Marge attendue": "sum",
+                }
+            )
+            .reset_index()
         )
-        .reset_index()
-    )
+
+        # Calculate weighted Cote separately using apply
+        cote_weighted = (
+            valid_bets.groupby(["ID_MATCH", "Match", "player_bet"])
+            .apply(weighted_avg, include_groups=False)
+            .reset_index(name="Cote")
+        )
+
+        # Merge the weighted Cote back
+        grouped_bets = grouped_bets.merge(
+            cote_weighted, on=["ID_MATCH", "Match", "player_bet"], how="left"
+        )
+
+    except Exception as e:
+        print(f"Error during grouping bets: {e}")
+        raise e
+    print(f"Prepared grouped bets with {len(grouped_bets)} entries.")
     grouped_bets["Cote"] = grouped_bets["Cote"].round(3)
     grouped_bets["Prédiction"] = grouped_bets["Prédiction"].round(3)
     grouped_bets["Marge attendue"] = grouped_bets["Marge attendue"].round(2)
@@ -361,6 +395,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
     grouped_bets.reset_index(drop=True, inplace=True)
     grouped_bets["Cumulative Gains"] = grouped_bets["Gains net"].cumsum()
     # print(grouped_bets.dtypes)
+    print(grouped_bets)
 
     return grouped_bets
 
