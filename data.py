@@ -153,7 +153,6 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         bets_data = load_bets(user_id)
     else:
         bets_data = load_inplay_bets(user_id)
-    print(f"Loaded {len(bets_data)} bets for user {user_id} (finished={finished})")
 
     # Defensive: if no data returned, provide an empty dataframe with expected schema
     if bets_data is None or bets_data.empty:
@@ -185,7 +184,6 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             empty_df[num_col] = empty_df.get(num_col, pd.Series(dtype=float)).astype(
                 float
             )
-        print("No bets data found; returning empty DataFrame.")
         return empty_df
 
     bets_data["Match"] = bets_data["winner_name"] + " - " + bets_data["loser_name"]
@@ -252,7 +250,6 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         )
         prepared_bets["Horaire"] = prepared_bets["tourney_date"].dt.strftime("%H:%M")
     except Exception as e:
-        print(f"Error extracting time from tourney_date: {e}")
         prepared_bets["Horaire"] = ""
 
     # Map surface names to French and normalize capitalization
@@ -267,7 +264,6 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             lambda v: surface_map.get(v, v)
         )
     except Exception as e:
-        print(f"Error mapping surface names: {e}")
         pass
 
     # Map round codes to French labels
@@ -288,7 +284,6 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             lambda r: round_map.get(r, r)
         )
     except Exception as e:
-        print(f"Error mapping round names: {e}")
         pass
 
     # Map tourney level codes to descriptive labels
@@ -340,7 +335,6 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         valid_bets = prepared_bets[~prepared_bets["voided"]].copy()
     else:
         valid_bets = prepared_bets.copy()
-    print(f"Loaded {len(valid_bets)} valid bets for user {user_id}.")
 
     # Define a function to calculate weighted average for Cote
     def weighted_avg(group):
@@ -387,7 +381,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
     except Exception as e:
         print(f"Error during grouping bets: {e}")
         raise e
-    print(f"Prepared grouped bets with {len(grouped_bets)} entries.")
+    # print(f"Prepared grouped bets with {len(grouped_bets)} entries.")
     grouped_bets["Cote"] = grouped_bets["Cote"].round(3)
     grouped_bets["Prédiction"] = grouped_bets["Prédiction"].round(3)
     grouped_bets["Marge attendue"] = grouped_bets["Marge attendue"].round(2)
@@ -395,7 +389,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
     grouped_bets.reset_index(drop=True, inplace=True)
     grouped_bets["Cumulative Gains"] = grouped_bets["Gains net"].cumsum()
     # print(grouped_bets.dtypes)
-    print(grouped_bets)
+    # print(grouped_bets)
 
     return grouped_bets
 
