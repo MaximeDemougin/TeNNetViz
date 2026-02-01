@@ -197,7 +197,10 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             bets_data["loser_pred"],
         )
         bets_data["player_bet"] = np.where(
-            bets_data["bet"] == 1, bets_data["winner_name"], bets_data["loser_name"]
+            (bets_data["match_settled"] == 1) & (bets_data["bet"] == 1)
+            | (bets_data["match_settled"] == 2) & (bets_data["bet"] == 0),
+            bets_data["winner_name"],
+            bets_data["loser_name"],
         )
         bets_data["win"] = np.where(
             (bets_data["match_settled"] == 1) & (bets_data["bet"] == 1)
