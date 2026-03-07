@@ -13,11 +13,12 @@ from pages.components.charts import (
 )
 
 
-def render_grouped_table(bets_data: pd.DataFrame) -> None:
+def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> None:
     """Render the grouping controls, tables and charts below the metrics.
 
     This function encapsulates the long grouping/table/chart logic from the
     original dashboard file.
+    unit_mode: if True, display monetary values as units (÷ mise) instead of €.
     """
     # Check if bets_data is empty
     if bets_data.empty:
@@ -26,7 +27,16 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
 
     group_by = st.radio(
         "Grouper par :",
-        options=["Compétition", "Surface", "Cote", "Marge", "Mois", "Jour", "Match"],
+        options=[
+            "Compétition",
+            "Type de tournoi",
+            "Surface",
+            "Cote",
+            "Marge",
+            "Mois",
+            "Jour",
+            "Match",
+        ],
         horizontal=True,
         label_visibility="collapsed",
     )
@@ -35,6 +45,7 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
         "Match": "Match",
         "Jour": "Date",
         "Compétition": "Compétition",
+        "Type de tournoi": "Type de tournoi",
         "Surface": "Surface",
         "Cote": "Cote_bin",
         "Marge": "Marge_bin",
@@ -98,11 +109,34 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
 
         formatters = {}
         if "Mise" in display_match.columns:
-            formatters["Mise"] = lambda x: f"{x:,.2f}".replace(",", " ") + "€"
+            if unit_mode:
+                formatters["Mise"] = lambda x: "1 u"
+            else:
+                formatters["Mise"] = lambda x: f"{x:,.2f}".replace(",", " ") + "€"
         if "Gains net" in display_match.columns:
-            formatters["Gains net"] = lambda x: f"{x:+,.2f}".replace(",", " ") + "€"
+            if unit_mode:
+                # gains in units = gains / mise; we need access to the row, so compute a new col
+                try:
+                    display_match["Gains net"] = (
+                        display_match["Gains net"] / display_match["Mise"].replace(0, float("nan"))
+                    )
+                except Exception:
+                    pass
+                formatters["Gains net"] = lambda x: f"{x:+.3f} u"
+            else:
+                formatters["Gains net"] = lambda x: f"{x:+,.2f}".replace(",", " ") + "€"
         if "Gains attendus" in display_match.columns:
-            formatters["Gains attendus"] = lambda x: f"{x:,.2f}".replace(",", " ") + "€"
+            if unit_mode:
+                try:
+                    # Marge attendue / Mise for unit display
+                    display_match["Gains attendus"] = (
+                        display_match["Gains attendus"] / display_match["Mise"].replace(0, float("nan"))
+                    )
+                except Exception:
+                    pass
+                formatters["Gains attendus"] = lambda x: f"{x:+.3f} u"
+            else:
+                formatters["Gains attendus"] = lambda x: f"{x:,.2f}".replace(",", " ") + "€"
         if "ROI attendu" in display_match.columns:
             formatters["ROI attendu"] = lambda x: f"{x:+.1f}%"
         if "Cote" in display_match.columns:
@@ -186,6 +220,14 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
 
     else:
         df_display = bets_data.copy()
+
+        # If the group column doesn't exist in the data, fall back to "Compétition"
+        if group_col not in df_display.columns:
+            st.warning(
+                f"La colonne '{group_by}' n'est pas disponible dans les données. Rechargez la page pour mettre à jour le cache."
+            )
+            return
+
         df_display["Date"] = pd.to_datetime(df_display["Date"], errors="coerce")
 
         if group_by == "Mois":
@@ -209,7 +251,9 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
             multiple_years = df_display["Year"].nunique() > 1
             if multiple_years:
                 df_display["Mois"] = df_display.apply(
-                    lambda r: f"{month_names_fr.get(int(r['MonthNum']), '')} {int(r['Year'])}",
+                    lambda r: (
+                        f"{month_names_fr.get(int(r['MonthNum']), '')} {int(r['Year'])}"
+                    ),
                     axis=1,
                 )
             else:
@@ -343,6 +387,10 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
                     grouped.set_index(group_col).reindex(sorted_comps).reset_index()
                 )
 
+        if group_by == "Type de tournoi":
+            # Sort alphabetically
+            grouped = grouped.sort_values(by=group_col)
+
         display_df = grouped[
             [
                 group_col,
@@ -449,15 +497,51 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
             color = color_map.get(val, "#d1d4dc")  # Couleur par défaut
             return f"color: {color}; font-weight: 700;"
 
+        # In unit mode, convert Mises and Gains columns to units (÷ mise per bet)
+        if unit_mode:
+            try:
+                # Total_Mises in units = count (1 unit per bet)
+                display_df["Mises"] = grouped["Count"].astype(float)
+                # Total_Gains in units = sum(net_gain / mise) per group
+                unit_gains = (
+                    df_display.groupby(group_col)
+                    .apply(
+                        lambda g: (
+                            g["Gains net"] / g["Mise"].replace(0, float("nan"))
+                        ).sum(),
+                        include_groups=False,
+                    )
+                    .reset_index(name="_unit_gains")
+                )
+                display_df = display_df.merge(unit_gains, left_on=group_by, right_on=group_col, how="left")
+                display_df["Gains"] = display_df["_unit_gains"]
+                display_df = display_df.drop(columns=[c for c in ["_unit_gains", group_col + "_y"] if c in display_df.columns])
+                # Resultat.attendu in units
+                unit_marges = (
+                    df_display.groupby(group_col)
+                    .apply(
+                        lambda g: (
+                            g["Marge attendue"] / g["Mise"].replace(0, float("nan"))
+                        ).sum(),
+                        include_groups=False,
+                    )
+                    .reset_index(name="_unit_marges")
+                )
+                display_df = display_df.merge(unit_marges, left_on=group_by, right_on=group_col, how="left")
+                display_df["Resultat.attendu"] = display_df["_unit_marges"]
+                display_df = display_df.drop(columns=[c for c in ["_unit_marges", group_col + "_y"] if c in display_df.columns])
+            except Exception:
+                pass
+
         styled = (
             display_df.style.format(
                 {
                     "Cote moyenne": lambda x: f"{x:.2f}",
                     "ROI attendu": lambda x: f"{x:+.1f}%",
-                    "Mises": lambda x: f"{x:,.0f}".replace(",", " ") + "€",
-                    "Gains": lambda x: f"{x:+,.0f}".replace(",", " ") + "€",
+                    "Mises": (lambda x: f"{x:,.0f} u".replace(",", " ")) if unit_mode else (lambda x: f"{x:,.0f}".replace(",", " ") + "€"),
+                    "Gains": (lambda x: f"{x:+.2f} u") if unit_mode else (lambda x: f"{x:+,.0f}".replace(",", " ") + "€"),
                     "ROI": lambda x: f"{x:+.1f}%",
-                    "Resultat.attendu": lambda x: f"{x:+,.0f}".replace(",", " ") + "€",
+                    "Resultat.attendu": (lambda x: f"{x:+.2f} u") if unit_mode else (lambda x: f"{x:+,.0f}".replace(",", " ") + "€"),
                 }
             )
             .map(gain_color, subset=["Gains", "ROI"])
@@ -567,7 +651,9 @@ def render_grouped_table(bets_data: pd.DataFrame) -> None:
                             )
                             if count_field is not None:
                                 text_series = chart_df.apply(
-                                    lambda r: f"{int(r[count_field])}p\n{r[y_col_mises]:.0f}€",
+                                    lambda r: (
+                                        f"{int(r[count_field])}p\n{r[y_col_mises]:.0f}€"
+                                    ),
                                     axis=1,
                                 )
                             else:

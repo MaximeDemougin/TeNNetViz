@@ -42,13 +42,14 @@ def sort_competitions(series_or_list):
     return sorted_values
 
 
-def render_cumulative_chart(bets_data: pd.DataFrame, mode: str = "match") -> list:
+def render_cumulative_chart(bets_data: pd.DataFrame, mode: str = "match", unit_mode: bool = False) -> list:
     """Render cumulative gains line chart and return the selected points list (may be empty).
 
     mode: one of 'match' (per-match index), 'horaire' (use Date/time as x-axis),
     or 'jour' (aggregate per day). The function will attempt to map selections
     back to the table where possible. In 'jour' mode chart selections are mapped
     to a date value in session_state["selected_from_chart"].
+    unit_mode: if True, plot cumulative units (net_gain / mise) instead of €.
     """
 
     # Check if bets_data is empty
@@ -131,6 +132,20 @@ def render_cumulative_chart(bets_data: pd.DataFrame, mode: str = "match") -> lis
         plot_df["Cumulative_Marge"] = plot_df.get(
             "Marge attendue", pd.Series([0] * len(plot_df))
         ).cumsum()
+
+    # In unit mode, compute cumulative values divided by mise (1 unit = 1x stake)
+    if unit_mode:
+        try:
+            if "Gains net" in plot_df.columns and "Mise" in plot_df.columns:
+                plot_df = plot_df.copy()
+                plot_df["_unit_gain"] = plot_df["Gains net"] / plot_df["Mise"].replace(0, float("nan"))
+                plot_df["Cumulative Gains"] = plot_df["_unit_gain"].cumsum()
+            if "Marge attendue" in plot_df.columns and "Mise" in plot_df.columns:
+                plot_df["_unit_marge"] = plot_df["Marge attendue"] / plot_df["Mise"].replace(0, float("nan"))
+                plot_df["Cumulative_Marge"] = plot_df["_unit_marge"].cumsum()
+        except Exception:
+            pass
+    y_label_suffix = " u" if unit_mode else "€"
 
     # Build gains trace (explicit go.Scatter) to avoid creating duplicate traces
     try:
@@ -221,8 +236,9 @@ def render_cumulative_chart(bets_data: pd.DataFrame, mode: str = "match") -> lis
 
     # Improve hover templates to include trace name and formatted value
     try:
-        gains_trace.update(hovertemplate="%{y:.0f}€<extra>Gains</extra>")
-        marge_trace.update(hovertemplate="%{y:.0f}€<extra>Attendu</extra>")
+        fmt = ".2f" if unit_mode else ".0f"
+        gains_trace.update(hovertemplate=f"%{{y:{fmt}}}{y_label_suffix}<extra>Gains</extra>")
+        marge_trace.update(hovertemplate=f"%{{y:{fmt}}}{y_label_suffix}<extra>Attendu</extra>")
     except Exception:
         pass
 

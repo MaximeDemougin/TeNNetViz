@@ -62,10 +62,12 @@ st.title("🏆 Les résultats TeNNet", text_alignment="center")
 # Cache bets data once per user in session_state to avoid repeated loads during reruns
 if st.session_state.get("logged_in", False):
     user_id = st.session_state.get("ID_USER")
-    # If cached data missing or belongs to a different user, (re)load it
+    cached = st.session_state.get("bets_data_cached")
+    # Reload if cache is missing, belongs to different user, or is missing the new "Type de tournoi" column
     if (
         "bets_data_cached" not in st.session_state
         or st.session_state.get("bets_data_user_id") != user_id
+        or (cached is not None and "Type de tournoi" not in cached.columns)
     ):
         try:
             st.session_state["bets_data_cached"] = prepare_bets_data(
@@ -232,6 +234,37 @@ if st.session_state.get("logged_in", False):
             default=surfaces if len(surfaces) > 0 else None,
         )
 
+        # Type de tournoi filter
+        try:
+            tourney_types = bets_original["Type de tournoi"].dropna().unique().tolist()
+            tourney_types = sorted(tourney_types)
+        except Exception:
+            tourney_types = []
+
+        # Handle "Tout cocher" request from previous run (flag set before widget is created)
+        if st.session_state.pop("tt_select_all", False):
+            st.session_state["tt_multiselect"] = tourney_types
+
+        # Initialise widget state on first load (all selected)
+        if "tt_multiselect" not in st.session_state:
+            st.session_state["tt_multiselect"] = tourney_types
+
+        tourney_type_selected = st.sidebar.multiselect(
+            "Filtrer - Type de tournoi",
+            options=tourney_types,
+            key="tt_multiselect",
+        )
+
+        # "Tout cocher" button: sets a flag, the actual state update happens next run (above)
+        if st.sidebar.button("✅ Tout cocher", use_container_width=True, key="tt_btn"):
+            st.session_state["tt_select_all"] = True
+            st.rerun()
+
+        st.sidebar.divider()
+
+        # Display mode: euros or units (gain / mise)
+        unit_mode = st.sidebar.toggle("Afficher en unités (÷ mise)", value=False)
+
         # Apply filters
         filtered = bets_original.copy()
         try:
@@ -299,6 +332,15 @@ if st.session_state.get("logged_in", False):
         except Exception:
             pass
 
+        # Apply Type de tournoi filter
+        try:
+            if tourney_type_selected and len(tourney_type_selected) > 0:
+                filtered = filtered[
+                    filtered["Type de tournoi"].isin(tourney_type_selected)
+                ]
+        except Exception:
+            pass
+
         # Preserve original index for ID display in match card
         try:
             filtered = filtered.copy()
@@ -326,6 +368,9 @@ if st.session_state.get("logged_in", False):
             pass
 
         bets_data = filtered
+
+    else:
+        unit_mode = False
 
     # Add CSS for metric cards
     st.markdown(
@@ -444,7 +489,7 @@ if st.session_state.get("logged_in", False):
     # Display metric cards
     # Render metrics via separate component (add top-level title)
     st.markdown("### 📊 Vue d'ensemble", unsafe_allow_html=True)
-    metrics = render_metrics(bets_data)
+    metrics = render_metrics(bets_data, unit_mode=unit_mode)
 
     st.divider()
 
@@ -461,7 +506,7 @@ if st.session_state.get("logged_in", False):
         )
         mode_map = {"Par match": "match", "Par horaire": "horaire", "Par jour": "jour"}
         selected = render_cumulative_chart(
-            bets_data, mode=mode_map.get(view_mode, "match")
+            bets_data, mode=mode_map.get(view_mode, "match"), unit_mode=unit_mode
         )
 
     with col3:
@@ -472,4 +517,4 @@ if st.session_state.get("logged_in", False):
 
     # Grouped table and charts component (section title)
     st.markdown("### 🧾 Détail des paris")
-    render_grouped_table(bets_data)
+    render_grouped_table(bets_data, unit_mode=unit_mode)

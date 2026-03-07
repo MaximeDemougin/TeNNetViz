@@ -314,6 +314,17 @@ def prepare_bets_data(user_id: int, finished: bool = True):
     prepared_bets["marge"] = prepared_bets["marge"].round(2)
     prepared_bets["stake"] = prepared_bets["stake"].round(2)
     prepared_bets["net_gain"] = prepared_bets["net_gain"].round(2)
+
+    # Add combined tournament type (compet x level) to allow grouping by this category
+    try:
+        prepared_bets["tourney_type"] = (
+            prepared_bets["compet"].astype(str)
+            + " - "
+            + prepared_bets["tourney_level"].astype(str)
+        )
+    except Exception:
+        prepared_bets["tourney_type"] = ""
+
     prepared_bets.rename(
         columns={
             "tourney_date": "Date",
@@ -327,6 +338,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             "cote_pred": "Prédiction",
             "net_gain": "Gains net",
             "marge": "Marge attendue",
+            "tourney_type": "Type de tournoi",
         },
         inplace=True,
     )
@@ -360,6 +372,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
                     "Round": "first",
                     "Surface": "first",
                     "Score": "first",
+                    "Type de tournoi": "first",
                     "Mise": "sum",
                     "Prédiction": "mean",
                     "Gains net": "sum",
