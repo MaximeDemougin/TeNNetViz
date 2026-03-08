@@ -221,13 +221,6 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
     else:
         df_display = bets_data.copy()
 
-        # If the group column doesn't exist in the data, fall back to "Compétition"
-        if group_col not in df_display.columns:
-            st.warning(
-                f"La colonne '{group_by}' n'est pas disponible dans les données. Rechargez la page pour mettre à jour le cache."
-            )
-            return
-
         df_display["Date"] = pd.to_datetime(df_display["Date"], errors="coerce")
 
         if group_by == "Mois":
@@ -296,6 +289,13 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
             )
 
         df_display["Date"] = df_display["Date"].dt.strftime("%Y-%m-%d")
+
+        # Check that the group column now exists (after computed columns have been created)
+        if group_col not in df_display.columns:
+            st.warning(
+                f"La colonne '{group_by}' n'est pas disponible dans les données. Rechargez la page pour mettre à jour le cache."
+            )
+            return
 
         # Build aggregation dict, include Mois_key if present to help sorting
         agg_dict = {
