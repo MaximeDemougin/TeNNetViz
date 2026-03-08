@@ -117,9 +117,9 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
             if unit_mode:
                 # gains in units = gains / mise; we need access to the row, so compute a new col
                 try:
-                    display_match["Gains net"] = (
-                        display_match["Gains net"] / display_match["Mise"].replace(0, float("nan"))
-                    )
+                    display_match["Gains net"] = display_match[
+                        "Gains net"
+                    ] / display_match["Mise"].replace(0, float("nan"))
                 except Exception:
                     pass
                 formatters["Gains net"] = lambda x: f"{x:+.3f} u"
@@ -129,14 +129,16 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
             if unit_mode:
                 try:
                     # Marge attendue / Mise for unit display
-                    display_match["Gains attendus"] = (
-                        display_match["Gains attendus"] / display_match["Mise"].replace(0, float("nan"))
-                    )
+                    display_match["Gains attendus"] = display_match[
+                        "Gains attendus"
+                    ] / display_match["Mise"].replace(0, float("nan"))
                 except Exception:
                     pass
                 formatters["Gains attendus"] = lambda x: f"{x:+.3f} u"
             else:
-                formatters["Gains attendus"] = lambda x: f"{x:,.2f}".replace(",", " ") + "€"
+                formatters["Gains attendus"] = lambda x: (
+                    f"{x:,.2f}".replace(",", " ") + "€"
+                )
         if "ROI attendu" in display_match.columns:
             formatters["ROI attendu"] = lambda x: f"{x:+.1f}%"
         if "Cote" in display_match.columns:
@@ -513,9 +515,17 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
                     )
                     .reset_index(name="_unit_gains")
                 )
-                display_df = display_df.merge(unit_gains, left_on=group_by, right_on=group_col, how="left")
+                display_df = display_df.merge(
+                    unit_gains, left_on=group_by, right_on=group_col, how="left"
+                )
                 display_df["Gains"] = display_df["_unit_gains"]
-                display_df = display_df.drop(columns=[c for c in ["_unit_gains", group_col + "_y"] if c in display_df.columns])
+                display_df = display_df.drop(
+                    columns=[
+                        c
+                        for c in ["_unit_gains", group_col + "_y"]
+                        if c in display_df.columns
+                    ]
+                )
                 # Resultat.attendu in units
                 unit_marges = (
                     df_display.groupby(group_col)
@@ -527,9 +537,17 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
                     )
                     .reset_index(name="_unit_marges")
                 )
-                display_df = display_df.merge(unit_marges, left_on=group_by, right_on=group_col, how="left")
+                display_df = display_df.merge(
+                    unit_marges, left_on=group_by, right_on=group_col, how="left"
+                )
                 display_df["Resultat.attendu"] = display_df["_unit_marges"]
-                display_df = display_df.drop(columns=[c for c in ["_unit_marges", group_col + "_y"] if c in display_df.columns])
+                display_df = display_df.drop(
+                    columns=[
+                        c
+                        for c in ["_unit_marges", group_col + "_y"]
+                        if c in display_df.columns
+                    ]
+                )
             except Exception:
                 pass
 
@@ -538,10 +556,16 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
                 {
                     "Cote moyenne": lambda x: f"{x:.2f}",
                     "ROI attendu": lambda x: f"{x:+.1f}%",
-                    "Mises": (lambda x: f"{x:,.0f} u".replace(",", " ")) if unit_mode else (lambda x: f"{x:,.0f}".replace(",", " ") + "€"),
-                    "Gains": (lambda x: f"{x:+.2f} u") if unit_mode else (lambda x: f"{x:+,.0f}".replace(",", " ") + "€"),
+                    "Mises": (lambda x: f"{x:,.0f} u".replace(",", " "))
+                    if unit_mode
+                    else (lambda x: f"{x:,.0f}".replace(",", " ") + "€"),
+                    "Gains": (lambda x: f"{x:+.2f} u")
+                    if unit_mode
+                    else (lambda x: f"{x:+,.0f}".replace(",", " ") + "€"),
                     "ROI": lambda x: f"{x:+.1f}%",
-                    "Resultat.attendu": (lambda x: f"{x:+.2f} u") if unit_mode else (lambda x: f"{x:+,.0f}".replace(",", " ") + "€"),
+                    "Resultat.attendu": (lambda x: f"{x:+.2f} u")
+                    if unit_mode
+                    else (lambda x: f"{x:+,.0f}".replace(",", " ") + "€"),
                 }
             )
             .map(gain_color, subset=["Gains", "ROI"])

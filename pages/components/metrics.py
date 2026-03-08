@@ -20,8 +20,12 @@ def render_metrics(bets_data: pd.DataFrame, unit_mode: bool = False) -> dict:
     # Compute unit equivalents: sum of (net_gain / mise) per bet
     if unit_mode and total_bets > 0:
         try:
-            units_gains = (bets_data["Gains net"] / bets_data["Mise"].replace(0, float("nan"))).sum()
-            units_marges = (bets_data["Marge attendue"] / bets_data["Mise"].replace(0, float("nan"))).sum()
+            units_gains = (
+                bets_data["Gains net"] / bets_data["Mise"].replace(0, float("nan"))
+            ).sum()
+            units_marges = (
+                bets_data["Marge attendue"] / bets_data["Mise"].replace(0, float("nan"))
+            ).sum()
             units_mises = total_bets  # 1 unit per bet
         except Exception:
             units_gains = total_gains
@@ -100,7 +104,11 @@ def render_metrics(bets_data: pd.DataFrame, unit_mode: bool = False) -> dict:
         else:
             total_marges_fmt = f"{total_marges:+,.0f}".replace(",", " ") + "€"
         marge_pct_fmt = f"{marge_percentage:+.1f}%"
-        marge_color = "#3b82f6" if (units_marges if unit_mode else total_marges) > 0 else "#e04e4e"
+        marge_color = (
+            "#3b82f6"
+            if (units_marges if unit_mode else total_marges) > 0
+            else "#e04e4e"
+        )
         st.markdown(
             f"""
         <div class='metric-card card-blue' style='border: 1px solid rgba(59,130,246,0.2);'>

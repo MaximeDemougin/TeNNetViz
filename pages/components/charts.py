@@ -42,7 +42,9 @@ def sort_competitions(series_or_list):
     return sorted_values
 
 
-def render_cumulative_chart(bets_data: pd.DataFrame, mode: str = "match", unit_mode: bool = False) -> list:
+def render_cumulative_chart(
+    bets_data: pd.DataFrame, mode: str = "match", unit_mode: bool = False
+) -> list:
     """Render cumulative gains line chart and return the selected points list (may be empty).
 
     mode: one of 'match' (per-match index), 'horaire' (use Date/time as x-axis),
@@ -138,10 +140,14 @@ def render_cumulative_chart(bets_data: pd.DataFrame, mode: str = "match", unit_m
         try:
             if "Gains net" in plot_df.columns and "Mise" in plot_df.columns:
                 plot_df = plot_df.copy()
-                plot_df["_unit_gain"] = plot_df["Gains net"] / plot_df["Mise"].replace(0, float("nan"))
+                plot_df["_unit_gain"] = plot_df["Gains net"] / plot_df["Mise"].replace(
+                    0, float("nan")
+                )
                 plot_df["Cumulative Gains"] = plot_df["_unit_gain"].cumsum()
             if "Marge attendue" in plot_df.columns and "Mise" in plot_df.columns:
-                plot_df["_unit_marge"] = plot_df["Marge attendue"] / plot_df["Mise"].replace(0, float("nan"))
+                plot_df["_unit_marge"] = plot_df["Marge attendue"] / plot_df[
+                    "Mise"
+                ].replace(0, float("nan"))
                 plot_df["Cumulative_Marge"] = plot_df["_unit_marge"].cumsum()
         except Exception:
             pass
@@ -237,8 +243,12 @@ def render_cumulative_chart(bets_data: pd.DataFrame, mode: str = "match", unit_m
     # Improve hover templates to include trace name and formatted value
     try:
         fmt = ".2f" if unit_mode else ".0f"
-        gains_trace.update(hovertemplate=f"%{{y:{fmt}}}{y_label_suffix}<extra>Gains</extra>")
-        marge_trace.update(hovertemplate=f"%{{y:{fmt}}}{y_label_suffix}<extra>Attendu</extra>")
+        gains_trace.update(
+            hovertemplate=f"%{{y:{fmt}}}{y_label_suffix}<extra>Gains</extra>"
+        )
+        marge_trace.update(
+            hovertemplate=f"%{{y:{fmt}}}{y_label_suffix}<extra>Attendu</extra>"
+        )
     except Exception:
         pass
 
