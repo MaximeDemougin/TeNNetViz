@@ -94,8 +94,10 @@ def load_bets(user_id: int):
                             match_settled,
                             score,
                             tourney_date,
-                            winner_pred,
-                            loser_pred,
+                            pred_w_used as winner_pred,
+                            pred_l_used as loser_pred,
+                            is_ratio_odds_W,
+                            is_ratio_odds_L,
                             'doubles' = TRUE as doubles,
                             'atp' as compet
                                     FROM Bet b join men_matchs m on (b.ID_MATCH = m.ID_MATCH) 
@@ -112,8 +114,10 @@ def load_bets(user_id: int):
                             match_settled,
                             score,
                             tourney_date,
-                            winner_pred,
-                            loser_pred,
+                            pred_w_used as winner_pred,
+                            pred_l_used as loser_pred,
+                            is_ratio_odds_W,
+                            is_ratio_odds_L,
                             'doubles' = TRUE as doubles,
                             'wta' as compet
                                     FROM  Bet b join women_matchs m on (b.ID_MATCH = m.ID_MATCH)
@@ -130,8 +134,10 @@ def load_bets(user_id: int):
                                 match_settled, 
                                 score,
                                 tourney_date, 
-                                winner_pred,
-                                loser_pred,
+                                pred_w_used as winner_pred,
+                                pred_l_used as loser_pred,
+                                is_ratio_odds_W,
+                                is_ratio_odds_L,
                                 'doubles' = FALSE as doubles  ,
                                 'doubles' as compet
                                     FROM Bet b join double_matchs m  on (b.ID_MATCH = m.ID_MATCH) 
@@ -214,6 +220,12 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             -bets_data["stake"],
         )
         bets_data["net_unit"] = bets_data["net_gain"] / bets_data["stake"]
+        bets_data["is_ratio_odds"] = np.where(
+            (bets_data["match_settled"] == 1) & (bets_data["bet"] == 1)
+            | (bets_data["match_settled"] == 2) & (bets_data["bet"] == 0),
+            bets_data["is_ratio_odds_W"],
+            bets_data["is_ratio_odds_L"],
+        )
     else:
         bets_data["cote_pred"] = np.where(
             bets_data["bet"] == 1, bets_data["winner_pred"], bets_data["loser_pred"]
@@ -224,6 +236,11 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         bets_data["net_gain"] = 0.0
         bets_data["net_unit"] = 0.0
         bets_data["score"] = ""
+        bets_data["is_ratio_odds"] = np.where(
+            bets_data["bet"] == 1,
+            bets_data["is_ratio_odds_W"],
+            bets_data["is_ratio_odds_L"],
+        )
     bets_data["marge_unit"] = bets_data["real_odds"] / bets_data["cote_pred"] - 1
     bets_data["marge"] = bets_data["marge_unit"] * bets_data["stake"]
     prepared_bets = bets_data[
@@ -242,6 +259,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             "cote_pred",
             "net_gain",
             "marge",
+            "is_ratio_odds",
         ]
     ].copy()
     prepared_bets["compet"] = prepared_bets["compet"].str.title()
@@ -339,9 +357,18 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             "net_gain": "Gains net",
             "marge": "Marge attendue",
             "tourney_type": "Type de tournoi",
+            "is_ratio_odds": "Ratio Odds",
         },
         inplace=True,
     )
+
+    # Map is_ratio_odds boolean to readable labels
+    prepared_bets["Ratio Odds"] = (
+        prepared_bets["Ratio Odds"]
+        .map({1: "Oui", 0: "Non", True: "Oui", False: "Non"})
+        .fillna("Non")
+    )
+
     # Flag matches with incomplete sets (voided) — they should not count in results.
 
     if finished:
@@ -373,6 +400,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
                     "Surface": "first",
                     "Score": "first",
                     "Type de tournoi": "first",
+                    "Ratio Odds": "first",
                     "Mise": "sum",
                     "Prédiction": "mean",
                     "Gains net": "sum",
@@ -423,8 +451,10 @@ def load_inplay_bets(user_id: int):
                             surface,
                             match_settled,
                             tourney_date,
-                            winner_pred,
-                            loser_pred,
+                            pred_w_used as winner_pred,
+                            pred_l_used as loser_pred,
+                            is_ratio_odds_W,
+                            is_ratio_odds_L,
                             'doubles' = TRUE as doubles,
                             'atp' as compet
                                     FROM Bet b join men_matchs m on (b.ID_MATCH = m.ID_MATCH) 
@@ -440,8 +470,10 @@ def load_inplay_bets(user_id: int):
                             surface,
                             match_settled,
                             tourney_date,
-                            winner_pred,
-                            loser_pred,
+                            pred_w_used as winner_pred,
+                            pred_l_used as loser_pred,
+                            is_ratio_odds_W,
+                            is_ratio_odds_L,
                             'doubles' = TRUE as doubles,
                             'wta' as compet
                                     FROM  Bet b join women_matchs m on (b.ID_MATCH = m.ID_MATCH)
@@ -457,8 +489,10 @@ def load_inplay_bets(user_id: int):
                                 surface,
                                 match_settled, 
                                 tourney_date, 
-                                winner_pred,
-                                loser_pred,
+                                pred_w_used as winner_pred,
+                                pred_l_used as loser_pred,
+                                is_ratio_odds_W,
+                                is_ratio_odds_L,
                                 'doubles' = FALSE as doubles  ,
                                 'doubles' as compet
                                     FROM Bet b join double_matchs m  on (b.ID_MATCH = m.ID_MATCH) 
@@ -482,8 +516,8 @@ def load_future_matchs():
                             round,
                             surface,
                             tourney_date,
-                            winner_pred,
-                            loser_pred,
+                            pred_w_used as winner_pred,
+                            pred_l_used as loser_pred,
                             'doubles' = TRUE as doubles,
                             'atp' as compet,
                              o.liens as odds_lien,
@@ -502,8 +536,8 @@ def load_future_matchs():
                             round,
                             surface,
                             tourney_date,
-                            winner_pred,
-                            loser_pred,
+                            pred_w_used as winner_pred,
+                            pred_l_used as loser_pred,
                             'doubles' = TRUE as doubles,
                             'wta' as compet,
                              o.liens as odds_lien,
@@ -522,8 +556,8 @@ def load_future_matchs():
                                 round,
                                 surface,
                                 tourney_date, 
-                                winner_pred,
-                                loser_pred,
+                                pred_w_used as winner_pred,
+                                pred_l_used as loser_pred,
                                 'doubles' = FALSE as doubles,
                                 'doubles' as compet,
                                 o.liens as odds_lien,

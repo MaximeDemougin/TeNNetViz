@@ -67,7 +67,7 @@ if st.session_state.get("logged_in", False):
     if (
         "bets_data_cached" not in st.session_state
         or st.session_state.get("bets_data_user_id") != user_id
-        or (cached is not None and "Type de tournoi" not in cached.columns)
+        or (cached is not None and "Ratio Odds" not in cached.columns)
     ):
         try:
             st.session_state["bets_data_cached"] = prepare_bets_data(
@@ -262,6 +262,16 @@ if st.session_state.get("logged_in", False):
 
         st.sidebar.divider()
 
+        # Ratio Odds filter
+        ratio_odds_options = ["Oui", "Non"]
+        ratio_odds_selected = st.sidebar.multiselect(
+            "Filtrer - Ratio Odds",
+            options=ratio_odds_options,
+            default=ratio_odds_options,
+        )
+
+        st.sidebar.divider()
+
         # Display mode: euros or units (gain / mise)
         unit_mode = st.sidebar.toggle("Afficher en unités (÷ mise)", value=False)
 
@@ -338,6 +348,13 @@ if st.session_state.get("logged_in", False):
                 filtered = filtered[
                     filtered["Type de tournoi"].isin(tourney_type_selected)
                 ]
+        except Exception:
+            pass
+
+        # Apply Ratio Odds filter
+        try:
+            if ratio_odds_selected and len(ratio_odds_selected) > 0:
+                filtered = filtered[filtered["Ratio Odds"].isin(ratio_odds_selected)]
         except Exception:
             pass
 
