@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from utils import fmt_num, fmt_eur
 from pages.components.charts import (
     render_cote_distribution_bar,
     render_marge_distribution_bar,
@@ -9,6 +10,8 @@ from pages.components.charts import (
     render_marge_histogram,
     render_cote_raw_histogram,
     render_marge_raw_histogram,
+    render_weekly_performance_chart,
+    render_weekday_performance_chart,
     sort_competitions,
 )
 
@@ -34,7 +37,9 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
             "Cote",
             "Marge",
             "Mois",
+            "Semaine",
             "Jour",
+            "Jour de la semaine",
             "Match",
         ],
         horizontal=True,
@@ -50,6 +55,8 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
         "Cote": "Cote_bin",
         "Marge": "Marge_bin",
         "Mois": "Mois",
+        "Semaine": "Semaine",
+        "Jour de la semaine": "Jour_semaine",
     }
     group_col = col_map.get(group_by, "Match")
 
@@ -258,6 +265,40 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
             # sortable key for chronological sorting
             df_display["Mois_key"] = df_display["Date"].dt.strftime("%Y%m").astype(int)
 
+        if group_by == "Semaine":
+            # ISO week (Monday-anchored) labelled by week-start date
+            week_start = df_display["Date"].dt.to_period("W-SUN").dt.start_time
+            week_end = week_start + pd.Timedelta(days=6)
+            multiple_years = week_start.dt.year.nunique() > 1
+            if multiple_years:
+                df_display["Semaine"] = (
+                    week_start.dt.strftime("%d %b")
+                    + " → "
+                    + week_end.dt.strftime("%d %b %Y")
+                )
+            else:
+                df_display["Semaine"] = (
+                    week_start.dt.strftime("%d %b")
+                    + " → "
+                    + week_end.dt.strftime("%d %b")
+                )
+            df_display["Semaine_key"] = week_start.dt.strftime("%Y%m%d").astype(int)
+
+        if group_by == "Jour de la semaine":
+            day_names_fr = {
+                0: "Lundi",
+                1: "Mardi",
+                2: "Mercredi",
+                3: "Jeudi",
+                4: "Vendredi",
+                5: "Samedi",
+                6: "Dimanche",
+            }
+            df_display["Jour_semaine_key"] = df_display["Date"].dt.dayofweek
+            df_display["Jour_semaine"] = df_display["Jour_semaine_key"].map(
+                day_names_fr
+            )
+
         if group_by == "Cote":
             bins = [0, 1.5, 2.0, 2.5, 3.0, 5, 100]
             labels = ["<1.5", "1.5-2.0", "2.0-2.5", "2.5-3.0", "3.0-5.0", ">=5.0"]
@@ -299,7 +340,7 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
             )
             return
 
-        # Build aggregation dict, include Mois_key if present to help sorting
+        # Build aggregation dict, include sort keys if present
         agg_dict = {
             "Mise": "sum",
             "Gains net": "sum",
@@ -308,10 +349,13 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
             "Prédiction": "mean",
         }
         # For consistent named aggregations used later
+        agg_extra = {}
         if "Mois_key" in df_display.columns:
-            agg_extra = {"Mois_key": ("Mois_key", "min")}
-        else:
-            agg_extra = {}
+            agg_extra["Mois_key"] = ("Mois_key", "min")
+        if "Semaine_key" in df_display.columns:
+            agg_extra["Semaine_key"] = ("Semaine_key", "min")
+        if "Jour_semaine_key" in df_display.columns:
+            agg_extra["Jour_semaine_key"] = ("Jour_semaine_key", "min")
 
         grouped = (
             df_display.groupby(group_col)
@@ -336,17 +380,27 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
             .reset_index()
         )
 
-        # compute expected ROI per group (Cote / Prediction - 1) * 100
+        # compute expected ROI per group = Resultat.attendu / Mises * 100
+        # (cohérent avec ROI = Gains / Mises)
         try:
-            grouped["ROI_attendu"] = (
-                grouped["Avg_Cote"] / grouped["Avg_Pred"] - 1
-            ) * 100
+            grouped["ROI_attendu"] = grouped.apply(
+                lambda r: (
+                    (r["Resultat_attendu"] / r["Total_Mises"] * 100)
+                    if r["Total_Mises"] > 0
+                    else 0.0
+                ),
+                axis=1,
+            )
         except Exception:
             grouped["ROI_attendu"] = 0.0
 
-        # If we aggregated a Mois_key, sort by it (chronological) and then drop it from display
+        # If we aggregated a sort key, use it; otherwise sort by total gains
         if "Mois_key" in grouped.columns:
             grouped = grouped.sort_values(by="Mois_key", ascending=False)
+        elif "Semaine_key" in grouped.columns:
+            grouped = grouped.sort_values(by="Semaine_key", ascending=False)
+        elif "Jour_semaine_key" in grouped.columns:
+            grouped = grouped.sort_values(by="Jour_semaine_key", ascending=True)
         else:
             grouped = grouped.sort_values("Total_Gains", ascending=False)
 
@@ -556,16 +610,22 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
                 {
                     "Cote moyenne": lambda x: f"{x:.2f}",
                     "ROI attendu": lambda x: f"{x:+.1f}%",
-                    "Mises": (lambda x: f"{x:,.0f} u".replace(",", " "))
-                    if unit_mode
-                    else (lambda x: f"{x:,.0f}".replace(",", " ") + "€"),
-                    "Gains": (lambda x: f"{x:+.2f} u")
-                    if unit_mode
-                    else (lambda x: f"{x:+,.0f}".replace(",", " ") + "€"),
+                    "Mises": (
+                        (lambda x: f"{x:,.0f} u".replace(",", " "))
+                        if unit_mode
+                        else (lambda x: f"{x:,.0f}".replace(",", " ") + "€")
+                    ),
+                    "Gains": (
+                        (lambda x: f"{x:+.2f} u")
+                        if unit_mode
+                        else (lambda x: f"{x:+,.0f}".replace(",", " ") + "€")
+                    ),
                     "ROI": lambda x: f"{x:+.1f}%",
-                    "Resultat.attendu": (lambda x: f"{x:+.2f} u")
-                    if unit_mode
-                    else (lambda x: f"{x:+,.0f}".replace(",", " ") + "€"),
+                    "Resultat.attendu": (
+                        (lambda x: f"{x:+.2f} u")
+                        if unit_mode
+                        else (lambda x: f"{x:+,.0f}".replace(",", " ") + "€")
+                    ),
                 }
             )
             .map(gain_color, subset=["Gains", "ROI"])
@@ -676,13 +736,13 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
                             if count_field is not None:
                                 text_series = chart_df.apply(
                                     lambda r: (
-                                        f"{int(r[count_field])}p\n{r[y_col_mises]:.0f}€"
+                                        f"{int(r[count_field])}p\n{fmt_eur(r[y_col_mises])}"
                                     ),
                                     axis=1,
                                 )
                             else:
                                 text_series = chart_df[y_col_mises].map(
-                                    lambda v: f"{v:.0f}€"
+                                    lambda v: fmt_eur(v)
                                 )
 
                             fig_mises.update_traces(
@@ -769,3 +829,9 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
     # Add colored distribution bar for bets by competition only when "Compétition" grouping is selected
     if group_by == "Compétition":
         render_competition_distribution_bar(bets_data)
+
+    if group_by == "Semaine":
+        render_weekly_performance_chart(bets_data)
+
+    if group_by == "Jour de la semaine":
+        render_weekday_performance_chart(bets_data)

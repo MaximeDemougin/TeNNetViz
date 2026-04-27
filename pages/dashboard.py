@@ -2,9 +2,13 @@ import streamlit as st
 import pandas as pd
 from data import prepare_bets_data
 from pages.components.metrics import render_metrics
-from pages.components.charts import render_cumulative_chart, sort_competitions
+from pages.components.charts import (
+    render_cumulative_chart,
+    sort_competitions,
+)
 from pages.components.match_card import render_match_info
 from pages.components.grouped_table import render_grouped_table
+from pages.components.insights import render_insights_panel
 
 st.set_page_config(
     layout="wide", page_icon="logo_TeNNet.png", page_title="Dashboard TeNNet"
@@ -515,15 +519,25 @@ if st.session_state.get("logged_in", False):
         # Section title and cumulative chart component
         st.markdown("### 📈 Évolution des gains nets")
         # Allow switching between plotting by match index, horaire (Date/time) or jour (per day)
-        view_mode = st.selectbox(
-            "Afficher",
-            ["Par match", "Par horaire", "Par jour"],
-            index=0,
-            label_visibility="collapsed",
-        )
+        opt_l, opt_m, opt_r = st.columns([3, 2, 2])
+        with opt_l:
+            view_mode = st.selectbox(
+                "Afficher",
+                ["Par match", "Par horaire", "Par jour"],
+                index=0,
+                label_visibility="collapsed",
+            )
+        with opt_m:
+            show_peaks = st.toggle("Peaks", value=True, key="show_peaks")
+        with opt_r:
+            show_drawdown = st.toggle("Drawdown", value=False, key="show_drawdown")
         mode_map = {"Par match": "match", "Par horaire": "horaire", "Par jour": "jour"}
         selected = render_cumulative_chart(
-            bets_data, mode=mode_map.get(view_mode, "match"), unit_mode=unit_mode
+            bets_data,
+            mode=mode_map.get(view_mode, "match"),
+            unit_mode=unit_mode,
+            show_drawdown=show_drawdown,
+            show_peaks=show_peaks,
         )
 
     with col3:
@@ -535,3 +549,9 @@ if st.session_state.get("logged_in", False):
     # Grouped table and charts component (section title)
     st.markdown("### 🧾 Détail des paris")
     render_grouped_table(bets_data, unit_mode=unit_mode)
+
+    st.divider()
+
+    # --- Auto-insights (best / worst segments) ---
+    st.markdown("### 💡 Insights automatiques")
+    render_insights_panel(bets_data, min_n=10, top_k=3)

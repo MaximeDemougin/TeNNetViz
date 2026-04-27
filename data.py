@@ -3,15 +3,21 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import re
+import logging
 
 import sys
 
 sys.path.append(st.session_state["project_path"])
 from db_utils.db_utils import read_sql_query
+from config import (
+    BDD_TENNIS as BDD,
+    MAX_PRED_BETABLE,
+    MIN_PRED_BETABLE,
+    BOOKMAKER_MARGIN_FACTOR,
+    DATA_CACHE_TTL,
+)  # noqa: F401
 
-BDD = "TeNNet"
-MAX_PRED_BETABLE = 4
-MIN_PRED_BETABLE = 1.1
+logger = logging.getLogger(__name__)
 
 
 def _score_is_void(score):
@@ -64,6 +70,7 @@ def _score_is_void(score):
                 return True
         return False
     except Exception:
+        logger.exception("_score_is_void: failed to parse score %r", score)
         return True
 
 
@@ -71,8 +78,10 @@ def load_bankroll(user_id: int):
     """
     Loads the bankroll for a given user from the database.
     """
-    query_bankroll = f"""SELECT bankroll FROM FootNet.Users WHERE ID_USER = {user_id}"""
-    bankroll_data = read_sql_query(BDD, query_bankroll)
+    # Parameterized query to prevent SQL injection
+    user_id = int(user_id) if user_id is not None else 0
+    query_bankroll = "SELECT bankroll FROM FootNet.Users WHERE ID_USER = :user_id"
+    bankroll_data = read_sql_query(BDD, query_bankroll, params={"user_id": user_id})
     if not bankroll_data.empty:
         st.session_state["bankroll"] = int(bankroll_data["bankroll"].values[0])
     else:
@@ -84,6 +93,11 @@ def load_bets(user_id: int):
     """
     Loads the bets_data for a given user from the database.
     """
+    return _load_bets_cached(int(user_id) if user_id is not None else 0)
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+def _load_bets_cached(user_id: int):
     query_bets = """SELECT b.*,
                             tourney_name,
                             tourney_level,
@@ -193,7 +207,8 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         return empty_df
 
     bets_data["Match"] = bets_data["winner_name"] + " - " + bets_data["loser_name"]
-    bets_data["real_odds"] = (1 / (bets_data["odds"] - 1)) * 0.97 + 1
+    # real_odds applies a bookmaker margin adjustment (vig removal)
+    bets_data["real_odds"] = (1 / (bets_data["odds"] - 1)) * BOOKMAKER_MARGIN_FACTOR + 1
 
     if finished:
         bets_data["cote_pred"] = np.where(
@@ -270,7 +285,8 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             prepared_bets["tourney_date"], errors="coerce"
         )
         prepared_bets["Horaire"] = prepared_bets["tourney_date"].dt.strftime("%H:%M")
-    except Exception as e:
+    except Exception:
+        logger.exception("Failed to parse tourney_date / Horaire")
         prepared_bets["Horaire"] = ""
 
     # Map surface names to French and normalize capitalization
@@ -284,8 +300,8 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         prepared_bets["surface"] = prepared_bets["surface"].map(
             lambda v: surface_map.get(v, v)
         )
-    except Exception as e:
-        pass
+    except Exception:
+        logger.exception("Failed to map surface names")
 
     # Map round codes to French labels
     try:
@@ -304,8 +320,8 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         prepared_bets["round"] = prepared_bets["round"].map(
             lambda r: round_map.get(r, r)
         )
-    except Exception as e:
-        pass
+    except Exception:
+        logger.exception("Failed to map round names")
 
     # Map tourney level codes to descriptive labels
     try:
@@ -325,7 +341,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             lambda lvl: level_map.get(lvl, lvl)
         )
     except Exception as e:
-        print(f"Error mapping tourney level names: {e}")
+        logger.exception("Error mapping tourney level names: %s", e)
 
     prepared_bets["real_odds"] = prepared_bets["real_odds"].round(3)
     prepared_bets["cote_pred"] = prepared_bets["cote_pred"].round(3)
@@ -341,6 +357,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             + prepared_bets["tourney_level"].astype(str)
         )
     except Exception:
+        logger.exception("Failed to compute tourney_type")
         prepared_bets["tourney_type"] = ""
 
     prepared_bets.rename(
@@ -423,8 +440,8 @@ def prepare_bets_data(user_id: int, finished: bool = True):
         )
 
     except Exception as e:
-        print(f"Error during grouping bets: {e}")
-        raise e
+        logger.exception("Error during grouping bets: %s", e)
+        raise
     # print(f"Prepared grouped bets with {len(grouped_bets)} entries.")
     grouped_bets["Cote"] = grouped_bets["Cote"].round(3)
     grouped_bets["Prédiction"] = grouped_bets["Prédiction"].round(3)
@@ -442,6 +459,11 @@ def load_inplay_bets(user_id: int):
     """
     Loads the bets_data for a given user from the database.
     """
+    return _load_inplay_bets_cached(int(user_id) if user_id is not None else 0)
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+def _load_inplay_bets_cached(user_id: int):
     query_bets = """SELECT b.*,
                             tourney_name,
                             tourney_level,
@@ -509,6 +531,11 @@ def load_future_matchs():
     """
     Loads the future matchs from the database.
     """
+    return _load_future_matchs_cached()
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+def _load_future_matchs_cached():
     query_matchs = """SELECT  tourney_name,
                             tourney_level,
                             m.winner_name,

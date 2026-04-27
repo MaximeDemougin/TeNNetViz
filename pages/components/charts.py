@@ -3,6 +3,10 @@ import plotly.express as px
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+from utils import fmt_num, fmt_eur, fmt_money
+from config import DATA_CACHE_TTL
 
 
 def sort_competitions(series_or_list):
@@ -43,7 +47,11 @@ def sort_competitions(series_or_list):
 
 
 def render_cumulative_chart(
-    bets_data: pd.DataFrame, mode: str = "match", unit_mode: bool = False
+    bets_data: pd.DataFrame,
+    mode: str = "match",
+    unit_mode: bool = False,
+    show_drawdown: bool = False,
+    show_peaks: bool = True,
 ) -> list:
     """Render cumulative gains line chart and return the selected points list (may be empty).
 
@@ -232,13 +240,155 @@ def render_cumulative_chart(
         marge_trace = go.Scatter(x=[], y=[], mode="lines", name="Attendu")
 
     # Assemble figure with margin first, gains last (so gains receives selection)
-    fig = go.Figure()
+    if show_drawdown:
+        fig = make_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            row_heights=[0.78, 0.22],
+            vertical_spacing=0.04,
+        )
+    else:
+        fig = go.Figure()
     # ensure traces show in legend
     marge_trace.update(showlegend=True)
     gains_trace.update(showlegend=True)
     # add margin first so gains remains on top
-    fig.add_trace(marge_trace)
-    fig.add_trace(gains_trace)
+    if show_drawdown:
+        fig.add_trace(marge_trace, row=1, col=1)
+        fig.add_trace(gains_trace, row=1, col=1)
+    else:
+        fig.add_trace(marge_trace)
+        fig.add_trace(gains_trace)
+
+    # --- Peaks annotations (max & min of cumulative gains) ---
+    try:
+        if show_peaks and "Cumulative Gains" in plot_df.columns and len(plot_df) > 1:
+            cum_series = pd.to_numeric(plot_df["Cumulative Gains"], errors="coerce")
+            x_series = (
+                plot_df[x_col]
+                if x_col in plot_df.columns
+                else pd.Series(range(len(plot_df)))
+            )
+            if cum_series.notna().any():
+                imax = int(cum_series.idxmax())
+                imin = int(cum_series.idxmin())
+                peak_y = float(cum_series.loc[imax])
+                trough_y = float(cum_series.loc[imin])
+                peak_x = x_series.loc[imax]
+                trough_x = x_series.loc[imin]
+                ann_kwargs = {"row": 1, "col": 1} if show_drawdown else {}
+                # Peak (max)
+                fig.add_annotation(
+                    x=peak_x,
+                    y=peak_y,
+                    text=f"▲ Peak {fmt_money(peak_y, unit_mode=unit_mode, decimals=2 if unit_mode else 0, sign=True)}",
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1,
+                    arrowwidth=1,
+                    arrowcolor="#32b296",
+                    ax=0,
+                    ay=-28,
+                    font=dict(color="#32b296", size=11),
+                    bgcolor="rgba(20,20,25,0.85)",
+                    bordercolor="rgba(50,178,150,0.5)",
+                    borderwidth=1,
+                    borderpad=3,
+                    **ann_kwargs,
+                )
+                # Trough (min) — only if distinct from peak
+                if imin != imax:
+                    fig.add_annotation(
+                        x=trough_x,
+                        y=trough_y,
+                        text=f"▼ Low {fmt_money(trough_y, unit_mode=unit_mode, decimals=2 if unit_mode else 0, sign=True)}",
+                        showarrow=True,
+                        arrowhead=2,
+                        arrowsize=1,
+                        arrowwidth=1,
+                        arrowcolor="#e04e4e",
+                        ax=0,
+                        ay=28,
+                        font=dict(color="#e04e4e", size=11),
+                        bgcolor="rgba(20,20,25,0.85)",
+                        bordercolor="rgba(224,78,78,0.5)",
+                        borderwidth=1,
+                        borderpad=3,
+                        **ann_kwargs,
+                    )
+    except Exception:
+        pass
+
+    # --- Drawdown trace (row 2) ---
+    if show_drawdown:
+        try:
+            cum_vals = (
+                plot_df["Cumulative Gains"].astype(float).tolist()
+                if "Cumulative Gains" in plot_df.columns
+                else [0.0] * len(plot_df)
+            )
+            running_max = np.maximum.accumulate(cum_vals) if len(cum_vals) else []
+            drawdown_vals = [float(c) - float(m) for c, m in zip(cum_vals, running_max)]
+            x_vals = (
+                plot_df[x_col].tolist()
+                if x_col in plot_df.columns
+                else list(range(len(plot_df)))
+            )
+            dd_trace = go.Scatter(
+                x=x_vals,
+                y=drawdown_vals,
+                mode="lines",
+                name="Drawdown",
+                line=dict(color="#e04e4e", width=1),
+                fill="tozeroy",
+                fillcolor="rgba(224,78,78,0.25)",
+                hovertemplate=(
+                    f"%{{y:{'.2f' if unit_mode else '.0f'}}}{y_label_suffix}"
+                    "<extra>Drawdown</extra>"
+                ),
+                showlegend=True,
+            )
+            fig.add_trace(dd_trace, row=2, col=1)
+            try:
+                fig.update_yaxes(
+                    title_text="Drawdown",
+                    row=2,
+                    col=1,
+                    zeroline=True,
+                    zerolinecolor="rgba(255,255,255,0.2)",
+                )
+            except Exception:
+                pass
+            # Max drawdown annotation
+            try:
+                if drawdown_vals:
+                    idx_dd = int(np.argmin(drawdown_vals))
+                    dd_min = float(drawdown_vals[idx_dd])
+                    if dd_min < 0:
+                        fig.add_annotation(
+                            x=x_vals[idx_dd],
+                            y=dd_min,
+                            text=f"Max DD {fmt_money(dd_min, unit_mode=unit_mode, decimals=2 if unit_mode else 0, sign=True)}",
+                            showarrow=True,
+                            arrowhead=2,
+                            arrowsize=1,
+                            arrowwidth=1,
+                            arrowcolor="#e04e4e",
+                            ax=0,
+                            ay=20,
+                            font=dict(color="#e04e4e", size=10),
+                            bgcolor="rgba(20,20,25,0.85)",
+                            bordercolor="rgba(224,78,78,0.5)",
+                            borderwidth=1,
+                            borderpad=2,
+                            row=2,
+                            col=1,
+                        )
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     # Improve hover templates to include trace name and formatted value
     try:
@@ -285,7 +435,7 @@ def render_cumulative_chart(
     with st.container(border=True):
         event_dict = st.plotly_chart(
             fig,
-            height=400,
+            height=480 if show_drawdown else 400,
             selection_mode="points",
             on_select="rerun",
             width="stretch",
@@ -469,7 +619,7 @@ def render_distribution_bar(
                 color = colors[i % len(colors)]
             else:
                 color = "#64748b"
-            mise_formatted = f"{mise_val:,.0f}".replace(",", " ")
+            mise_formatted = fmt_num(mise_val)
             item = f"<div style='display: flex; align-items: center; margin: 4px 8px;'><div style='width: 12px; height: 12px; background-color: {color}; border-radius: 3px; margin-right: 6px;'></div><span style='color: #d1d4dc; font-size: 12px; font-weight: 600;'>{category}: {mise_formatted}€ ({pct:.1f}%)</span></div>"
             legend_items_mise.append(item)
 
@@ -584,6 +734,315 @@ def render_competition_distribution_bar(bets_data: pd.DataFrame) -> None:
         mise_icon="💸",
         mise_title="Répartition des mises par compétition",
     )
+
+
+def render_weekly_performance_chart(bets_data: pd.DataFrame) -> None:
+    """Two side-by-side weekly charts: Gains (réel + attendu) and ROI (réel + attendu)."""
+    if bets_data is None or bets_data.empty:
+        return
+    df = bets_data.copy()
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["Date"])
+    if df.empty:
+        return
+
+    week_start = df["Date"].dt.to_period("W-SUN").dt.start_time
+    grouped = (
+        df.assign(_week=week_start)
+        .groupby("_week", as_index=False)
+        .agg(
+            mises=("Mise", "sum"),
+            gains=("Gains net", "sum"),
+            marges=("Marge attendue", "sum"),
+            n=("Mise", "count"),
+        )
+        .sort_values("_week")
+    )
+    if grouped.empty:
+        return
+    grouped["roi"] = np.where(
+        grouped["mises"] > 0, grouped["gains"] / grouped["mises"] * 100, 0.0
+    )
+    grouped["roi_attendu"] = np.where(
+        grouped["mises"] > 0, grouped["marges"] / grouped["mises"] * 100, 0.0
+    )
+    grouped["label"] = grouped["_week"].dt.strftime("%d %b %Y")
+    bar_colors = ["#32b296" if g >= 0 else "#e04e4e" for g in grouped["gains"]]
+    roi_colors = ["#32b296" if r >= 0 else "#e04e4e" for r in grouped["roi"]]
+
+    layout_common = dict(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#d1d4dc"),
+        margin=dict(t=50, b=60, l=60, r=20),
+        legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
+        bargap=0.25,
+        height=400,
+    )
+
+    # --- Gains chart ---
+    fig_g = go.Figure()
+    fig_g.add_trace(
+        go.Bar(
+            x=grouped["label"],
+            y=grouped["gains"],
+            name="Gains réels",
+            marker_color=bar_colors,
+            hovertemplate=(
+                "Semaine du %{x}<br>"
+                "Gains: <b>%{y:+.0f}€</b><br>"
+                "Paris: %{customdata[0]}<br>"
+                "Mises: %{customdata[1]:.0f}€"
+                "<extra></extra>"
+            ),
+            customdata=np.stack([grouped["n"], grouped["mises"]], axis=-1),
+        )
+    )
+    fig_g.add_trace(
+        go.Scatter(
+            x=grouped["label"],
+            y=grouped["marges"],
+            name="Gains attendus",
+            mode="lines+markers",
+            line=dict(color="#3b82f6", width=2, dash="dot"),
+            marker=dict(size=6),
+            hovertemplate="Attendu: %{y:+.1f}€<extra></extra>",
+        )
+    )
+    fig_g.add_hline(y=0, line_color="#4b5563", line_width=1, line_dash="dash")
+    fig_g.update_layout(
+        title=dict(
+            text="💸 Gains hebdomadaires (réel vs attendu)",
+            font=dict(size=15, color="#9ca3af"),
+            x=0.5,
+            xanchor="center",
+        ),
+        **layout_common,
+    )
+    fig_g.update_xaxes(gridcolor="rgba(100,100,120,0.15)", title_text="Semaine")
+    fig_g.update_yaxes(
+        gridcolor="rgba(100,100,120,0.15)",
+        title_text="Gains (€)",
+        zeroline=True,
+        zerolinecolor="#4b5563",
+    )
+
+    # --- ROI chart ---
+    fig_r = go.Figure()
+    fig_r.add_trace(
+        go.Bar(
+            x=grouped["label"],
+            y=grouped["roi"],
+            name="ROI réel",
+            marker_color=roi_colors,
+            hovertemplate=(
+                "Semaine du %{x}<br>"
+                "ROI: <b>%{y:+.1f}%</b><br>"
+                "Paris: %{customdata[0]}"
+                "<extra></extra>"
+            ),
+            customdata=np.stack([grouped["n"]], axis=-1),
+        )
+    )
+    fig_r.add_trace(
+        go.Scatter(
+            x=grouped["label"],
+            y=grouped["roi_attendu"],
+            name="ROI attendu",
+            mode="lines+markers",
+            line=dict(color="#3b82f6", width=2, dash="dot"),
+            marker=dict(size=6),
+            hovertemplate="ROI attendu: %{y:+.1f}%<extra></extra>",
+        )
+    )
+    fig_r.add_hline(y=0, line_color="#4b5563", line_width=1, line_dash="dash")
+    fig_r.update_layout(
+        title=dict(
+            text="📈 ROI hebdomadaire (réel vs attendu)",
+            font=dict(size=15, color="#9ca3af"),
+            x=0.5,
+            xanchor="center",
+        ),
+        **layout_common,
+    )
+    fig_r.update_xaxes(gridcolor="rgba(100,100,120,0.15)", title_text="Semaine")
+    fig_r.update_yaxes(
+        gridcolor="rgba(100,100,120,0.15)",
+        title_text="ROI (%)",
+        zeroline=True,
+        zerolinecolor="#4b5563",
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.plotly_chart(fig_g, width="stretch")
+    with c2:
+        st.plotly_chart(fig_r, width="stretch")
+
+
+def render_weekday_performance_chart(bets_data: pd.DataFrame) -> None:
+    """Two side-by-side weekday charts: Gains (réel + attendu) and ROI (réel + attendu)."""
+    if bets_data is None or bets_data.empty:
+        return
+    df = bets_data.copy()
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["Date"])
+    if df.empty:
+        return
+
+    day_names_fr = {
+        0: "Lundi",
+        1: "Mardi",
+        2: "Mercredi",
+        3: "Jeudi",
+        4: "Vendredi",
+        5: "Samedi",
+        6: "Dimanche",
+    }
+    df["_dow"] = df["Date"].dt.dayofweek
+    grouped = (
+        df.groupby("_dow", as_index=False)
+        .agg(
+            mises=("Mise", "sum"),
+            gains=("Gains net", "sum"),
+            marges=("Marge attendue", "sum"),
+            n=("Mise", "count"),
+            wins=("Gains net", lambda x: int((x > 0).sum())),
+        )
+        .sort_values("_dow")
+    )
+    if grouped.empty:
+        return
+    grouped["jour"] = grouped["_dow"].map(day_names_fr)
+    grouped["roi"] = np.where(
+        grouped["mises"] > 0, grouped["gains"] / grouped["mises"] * 100, 0.0
+    )
+    grouped["roi_attendu"] = np.where(
+        grouped["mises"] > 0, grouped["marges"] / grouped["mises"] * 100, 0.0
+    )
+    grouped["winrate"] = np.where(
+        grouped["n"] > 0, grouped["wins"] / grouped["n"] * 100, 0.0
+    )
+    bar_colors_g = ["#32b296" if g >= 0 else "#e04e4e" for g in grouped["gains"]]
+    bar_colors_r = ["#32b296" if r >= 0 else "#e04e4e" for r in grouped["roi"]]
+
+    layout_common = dict(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#d1d4dc"),
+        margin=dict(t=50, b=60, l=60, r=20),
+        legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
+        bargap=0.3,
+        height=380,
+    )
+
+    # --- Gains chart ---
+    fig_g = go.Figure()
+    fig_g.add_trace(
+        go.Bar(
+            x=grouped["jour"],
+            y=grouped["gains"],
+            name="Gains réels",
+            marker_color=bar_colors_g,
+            text=[f"{g:+.0f}€" for g in grouped["gains"]],
+            textposition="outside",
+            textfont=dict(color="#d1d4dc", size=10, weight=600),
+            hovertemplate=(
+                "%{x}<br>"
+                "Gains: <b>%{y:+.0f}€</b><br>"
+                "Paris: %{customdata[0]}<br>"
+                "Mises: %{customdata[1]:.0f}€<br>"
+                "Winrate: %{customdata[2]:.0f}%"
+                "<extra></extra>"
+            ),
+            customdata=np.stack(
+                [grouped["n"], grouped["mises"], grouped["winrate"]], axis=-1
+            ),
+        )
+    )
+    fig_g.add_trace(
+        go.Scatter(
+            x=grouped["jour"],
+            y=grouped["marges"],
+            name="Gains attendus",
+            mode="lines+markers",
+            line=dict(color="#3b82f6", width=2, dash="dot"),
+            marker=dict(size=8),
+            hovertemplate="Attendu %{x}: %{y:+.1f}€<extra></extra>",
+        )
+    )
+    fig_g.add_hline(y=0, line_color="#4b5563", line_width=1, line_dash="dash")
+    fig_g.update_layout(
+        title=dict(
+            text="💸 Gains par jour (réel vs attendu)",
+            font=dict(size=15, color="#9ca3af"),
+            x=0.5,
+            xanchor="center",
+        ),
+        **layout_common,
+    )
+    fig_g.update_xaxes(gridcolor="rgba(100,100,120,0.15)", title_text="Jour")
+    fig_g.update_yaxes(
+        gridcolor="rgba(100,100,120,0.15)",
+        title_text="Gains (€)",
+        zeroline=True,
+        zerolinecolor="#4b5563",
+    )
+
+    # --- ROI chart ---
+    fig_r = go.Figure()
+    fig_r.add_trace(
+        go.Bar(
+            x=grouped["jour"],
+            y=grouped["roi"],
+            name="ROI réel",
+            marker_color=bar_colors_r,
+            text=[f"{r:+.1f}%" for r in grouped["roi"]],
+            textposition="outside",
+            textfont=dict(color="#d1d4dc", size=10, weight=600),
+            hovertemplate=(
+                "%{x}<br>"
+                "ROI: <b>%{y:+.1f}%</b><br>"
+                "Paris: %{customdata[0]}"
+                "<extra></extra>"
+            ),
+            customdata=np.stack([grouped["n"]], axis=-1),
+        )
+    )
+    fig_r.add_trace(
+        go.Scatter(
+            x=grouped["jour"],
+            y=grouped["roi_attendu"],
+            name="ROI attendu",
+            mode="lines+markers",
+            line=dict(color="#3b82f6", width=2, dash="dot"),
+            marker=dict(size=8),
+            hovertemplate="ROI attendu %{x}: %{y:+.1f}%<extra></extra>",
+        )
+    )
+    fig_r.add_hline(y=0, line_color="#4b5563", line_width=1, line_dash="dash")
+    fig_r.update_layout(
+        title=dict(
+            text="📈 ROI par jour (réel vs attendu)",
+            font=dict(size=15, color="#9ca3af"),
+            x=0.5,
+            xanchor="center",
+        ),
+        **layout_common,
+    )
+    fig_r.update_xaxes(gridcolor="rgba(100,100,120,0.15)", title_text="Jour")
+    fig_r.update_yaxes(
+        gridcolor="rgba(100,100,120,0.15)",
+        title_text="ROI (%)",
+        zeroline=True,
+        zerolinecolor="#4b5563",
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.plotly_chart(fig_g, width="stretch")
+    with c2:
+        st.plotly_chart(fig_r, width="stretch")
 
 
 def render_cote_histogram(bets_data: pd.DataFrame) -> None:
@@ -970,3 +1429,293 @@ def render_marge_raw_histogram(bets_data: pd.DataFrame, nbins: int = 50) -> None
 
     except Exception as e:
         pass
+
+
+def render_calendar_heatmap(
+    bets_data: pd.DataFrame,
+    metric: str = "ROI",
+    days: int = 365,
+) -> None:
+    """GitHub-style calendar heatmap of daily betting activity.
+
+    metric: one of {"ROI", "Gains net", "Nb paris", "Mises"}.
+    """
+    if bets_data is None or bets_data.empty or "Date" not in bets_data.columns:
+        st.info("Aucune donnée pour la heatmap calendaire.")
+        return
+
+    # Keep only the columns needed and pre-sort to maximise cache hit-rate
+    df_in = bets_data[["Date", "Mise", "Gains net"]].copy()
+    df_in["Date"] = pd.to_datetime(df_in["Date"], errors="coerce")
+    df_in = df_in.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
+    if df_in.empty:
+        st.info("Aucune donnée pour la heatmap calendaire.")
+        return
+
+    payload = _compute_heatmap_payload(df_in, metric=metric, days=int(days))
+    if payload is None:
+        st.info("Aucune donnée pour la heatmap calendaire.")
+        return
+
+    _render_heatmap_figure(payload)
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+def _compute_heatmap_payload(df_in: pd.DataFrame, metric: str, days: int):
+    """Aggregate per-day stats and build the matrices needed by the heatmap.
+
+    Cached: re-runs only when (filtered df, metric, days) change.
+    Returns a dict of plain Python / numpy structures (Plotly-ready).
+    """
+    df = df_in.copy()
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["Date"])
+    if df.empty:
+        return None
+
+    df["day"] = df["Date"].dt.normalize()
+    per_day = df.groupby("day").agg(
+        nb=("Mise", "count"),
+        mises=("Mise", "sum"),
+        gains=("Gains net", "sum"),
+    )
+    per_day["roi"] = np.where(
+        per_day["mises"] > 0, per_day["gains"] / per_day["mises"] * 100, 0.0
+    )
+
+    end = pd.Timestamp.today().normalize()
+    start = end - pd.Timedelta(days=days - 1)
+    start = start - pd.Timedelta(days=start.weekday())  # align to Monday
+    full_idx = pd.date_range(start=start, end=end, freq="D")
+    per_day = per_day.reindex(full_idx).fillna(0.0)
+    per_day.index.name = "day"
+
+    # --- Color schemes (GitHub-inspired, muted, dark-mode friendly) ---
+    diverging_scale = [
+        [0.0, "#7f1d1d"],  # deep red
+        [0.25, "#b91c1c"],
+        [0.5, "#2a2f3a"],  # neutral / near-zero  (matches background)
+        [0.75, "#15803d"],
+        [1.0, "#16a34a"],  # rich green
+    ]
+    sequential_blue = [
+        [0.0, "#1e3a5f"],
+        [0.25, "#2563eb"],
+        [0.5, "#3b82f6"],
+        [0.75, "#60a5fa"],
+        [1.0, "#93c5fd"],
+    ]
+
+    metric_map = {
+        "ROI": ("roi", "%", diverging_scale, True),
+        "Gains net": ("gains", "€", diverging_scale, True),
+        "Nb paris": ("nb", "", sequential_blue, False),
+        "Mises": ("mises", "€", sequential_blue, False),
+    }
+    col, unit, colorscale, diverging = metric_map.get(metric, metric_map["ROI"])
+    z_series = per_day[col].astype(float)
+
+    weeks = ((per_day.index - start).days // 7).astype(int).to_numpy()
+    weekdays = per_day.index.weekday.to_numpy()
+    n_weeks = int(weeks.max()) + 1
+
+    # --- Foreground (active days only) ---
+    z_fg = np.full((7, n_weeks), np.nan)
+    active = per_day["nb"].to_numpy() > 0
+    for w, d, v, a in zip(weeks, weekdays, z_series.to_numpy(), active):
+        if a:
+            z_fg[d, w] = v
+
+    # --- Background (light dotted grid via a constant trace) ---
+    z_bg = np.zeros((7, n_weeks))
+
+    # Color range
+    if diverging:
+        valid = z_series[per_day["nb"] > 0]
+        amax = float(np.nanmax(np.abs(valid))) if not valid.empty else 1.0
+        amax = amax if amax > 0 else 1.0
+        zmin, zmid, zmax = -amax, 0.0, amax
+    else:
+        zmin = 0.0
+        zmid = None
+        zmax = float(np.nanmax(z_fg)) if np.any(~np.isnan(z_fg)) else 1.0
+        if zmax <= 0:
+            zmax = 1.0
+
+    # --- Hover text matrix (covers all cells) ---
+    text = np.empty((7, n_weeks), dtype=object)
+    text[:] = ""
+    for w, d, day_idx in zip(weeks, weekdays, per_day.index):
+        nb = int(per_day.loc[day_idx, "nb"])
+        date_str = day_idx.strftime("%d %b %Y")
+        if nb == 0:
+            text[d, w] = (
+                f"<b>{date_str}</b><br><span style='color:#6b7280'>Aucun pari</span>"
+            )
+        else:
+            text[d, w] = (
+                f"<b>{date_str}</b><br>"
+                f"Paris: <b>{nb}</b><br>"
+                f"Mises: {fmt_eur(per_day.loc[day_idx, 'mises'])}<br>"
+                f"Gains: <b>{fmt_eur(per_day.loc[day_idx, 'gains'], sign=True)}</b><br>"
+                f"ROI: <b>{per_day.loc[day_idx, 'roi']:+.1f}%</b>"
+            ).replace(",", " ")
+
+    # --- Month ticks: center each month on its middle week ---
+    months = [
+        (start + pd.Timedelta(weeks=int(w))).to_period("M") for w in range(n_weeks)
+    ]
+    tick_vals, tick_text = [], []
+    seen = {}
+    for i, m in enumerate(months):
+        seen.setdefault(m, []).append(i)
+    month_fr = {
+        1: "janv",
+        2: "févr",
+        3: "mars",
+        4: "avr",
+        5: "mai",
+        6: "juin",
+        7: "juil",
+        8: "août",
+        9: "sept",
+        10: "oct",
+        11: "nov",
+        12: "déc",
+    }
+    for m, idxs in seen.items():
+        if len(idxs) >= 2:  # skip half-visible months at the edges
+            tick_vals.append(idxs[len(idxs) // 2])
+            tick_text.append(month_fr[m.month])
+
+    return {
+        "z_bg": z_bg,
+        "z_fg": z_fg,
+        "text": text,
+        "colorscale": colorscale,
+        "zmin": zmin,
+        "zmax": zmax,
+        "zmid": zmid,
+        "tick_vals": tick_vals,
+        "tick_text": tick_text,
+        "metric": metric,
+        "unit": unit,
+        "n_weeks": n_weeks,
+        "days": int(days),
+    }
+
+
+def _render_heatmap_figure(payload: dict) -> None:
+    z_bg = payload["z_bg"]
+    z_fg = payload["z_fg"]
+    text = payload["text"]
+    colorscale = payload["colorscale"]
+    zmin = payload["zmin"]
+    zmax = payload["zmax"]
+    zmid = payload["zmid"]
+    tick_vals = payload["tick_vals"]
+    tick_text = payload["tick_text"]
+    metric = payload["metric"]
+    unit = payload["unit"]
+    days = payload.get("days", 0)
+
+    fig = go.Figure()
+
+    # Background grid: muted dark squares for every cell
+    fig.add_trace(
+        go.Heatmap(
+            z=z_bg,
+            colorscale=[[0, "#1f2530"], [1, "#1f2530"]],
+            showscale=False,
+            hoverinfo="skip",
+            xgap=3,
+            ygap=3,
+            zmin=0,
+            zmax=1,
+        )
+    )
+
+    # Foreground: actual data
+    fig.add_trace(
+        go.Heatmap(
+            z=z_fg,
+            text=text,
+            hoverinfo="text",
+            hoverongaps=True,  # let hover work even on NaN cells
+            colorscale=colorscale,
+            zmin=zmin,
+            zmax=zmax,
+            zmid=zmid,
+            xgap=3,
+            ygap=3,
+            showscale=True,
+            colorbar=dict(
+                title=dict(
+                    text=f"{metric}{(' (' + unit + ')') if unit else ''}",
+                    side="right",
+                    font=dict(color="#9ca3af", size=11),
+                ),
+                thickness=8,
+                len=0.85,
+                outlinewidth=0,
+                tickfont=dict(color="#9ca3af", size=10),
+            ),
+        )
+    )
+
+    # Hover layer over background to expose tooltips on inactive days
+    fig.add_trace(
+        go.Heatmap(
+            z=np.where(np.isnan(z_fg), 0, np.nan),
+            text=text,
+            hoverinfo="text",
+            colorscale=[[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]],
+            showscale=False,
+            xgap=3,
+            ygap=3,
+        )
+    )
+
+    fig.update_layout(
+        title=dict(
+            text=f"📅 {metric} par jour"
+            + (f" — {days} derniers jours" if days else ""),
+            x=0.0,
+            xanchor="left",
+            font=dict(color="#e5e7eb", size=15, family="Inter, system-ui, sans-serif"),
+        ),
+        height=230,
+        margin=dict(l=30, r=10, t=40, b=20),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(
+            tickvals=tick_vals,
+            ticktext=tick_text,
+            showgrid=False,
+            zeroline=False,
+            showline=False,
+            ticks="",
+            tickfont=dict(color="#9ca3af", size=11),
+            fixedrange=True,
+        ),
+        yaxis=dict(
+            tickvals=[0, 2, 4],  # show only Lun / Mer / Ven
+            ticktext=["Lun", "Mer", "Ven"],
+            showgrid=False,
+            zeroline=False,
+            showline=False,
+            ticks="",
+            tickfont=dict(color="#9ca3af", size=11),
+            autorange="reversed",
+            scaleanchor="x",  # square cells
+            scaleratio=1,
+            fixedrange=True,
+        ),
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key=f"calendar_heatmap_{metric}_{days}",
+        config={"displayModeBar": False},
+    )

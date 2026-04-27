@@ -1,5 +1,6 @@
 import streamlit as st
 from data import prepare_bets_data
+from utils import fmt_eur
 
 st.set_page_config(
     layout="wide", page_icon="logo_TeNNet.png", page_title="Paris en cours"
@@ -153,7 +154,7 @@ def display_bet_cards(bets_df, cols_per_row=3):
                     <div style='margin: 12px 0;'>
                         <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
                             <span style='color: #9ca3af; font-size: 14px;'>💰 Mise</span>
-                            <span style='font-weight: 600; color: #fbbf24;'>{bet["Mise"]:.2f}€</span>
+                            <span style='font-weight: 600; color: #fbbf24;'>{fmt_eur(bet["Mise"], decimals=2)}</span>
                         </div>
                         <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
                             <span style='color: #9ca3af; font-size: 14px;'>📊 Cote</span>
@@ -357,7 +358,7 @@ if st.session_state.get("logged_in", False):
                 f"""
             <div class='metric-card card-yellow' style='border: 1px solid rgba(251,191,36,0.2);'>
                 <div style='color: #9ca3af; font-size: 14px; margin-bottom: 8px;'>💰 Mises totales</div>
-                <div style='font-size: 32px; font-weight: 700; color: #fbbf24;'>{total_mises:.2f}€</div>
+                <div style='font-size: 32px; font-weight: 700; color: #fbbf24;'>{fmt_eur(total_mises, decimals=2)}</div>
                 <div style='color: #9ca3af; font-size: 12px; margin-top: 8px;'>engagés</div>
             </div>
             """,
@@ -465,7 +466,7 @@ if st.session_state.get("logged_in", False):
 
             # Format values - use dash if empty
             count_display = "—" if is_empty else str(len(atp_bets))
-            mises_display = "—" if is_empty else f"{atp_mises:.2f}€"
+            mises_display = "—" if is_empty else fmt_eur(atp_mises, decimals=2)
             gains_display = "—" if is_empty else f"{atp_gains:+.2f}€"
             atp_marge_pct = (atp_marges / atp_mises * 100) if atp_mises > 0 else 0
             marges_display = (
@@ -549,7 +550,7 @@ if st.session_state.get("logged_in", False):
 
             # Format values - use dash if empty
             count_display = "—" if is_empty else str(len(wta_bets))
-            mises_display = "—" if is_empty else f"{wta_mises:.2f}€"
+            mises_display = "—" if is_empty else fmt_eur(wta_mises, decimals=2)
             gains_display = "—" if is_empty else f"{wta_gains:+.2f}€"
             wta_marge_pct = (wta_marges / wta_mises * 100) if wta_mises > 0 else 0
             marges_display = (
@@ -637,7 +638,7 @@ if st.session_state.get("logged_in", False):
 
             # Format values - use dash if empty
             count_display = "—" if is_empty else str(len(doubles_bets))
-            mises_display = "—" if is_empty else f"{doubles_mises:.2f}€"
+            mises_display = "—" if is_empty else fmt_eur(doubles_mises, decimals=2)
             gains_display = "—" if is_empty else f"{doubles_gains:+.2f}€"
             doubles_marge_pct = (
                 (doubles_marges / doubles_mises * 100) if doubles_mises > 0 else 0

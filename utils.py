@@ -2,6 +2,38 @@ import base64
 import streamlit as st
 
 
+def fmt_num(value, decimals: int = 0, sign: bool = False) -> str:
+    """Format a number with non-breaking thin space as thousands separator.
+
+    Returns "—" for None / NaN. Uses U+202F (NARROW NO-BREAK SPACE) so the
+    grouping never wraps and renders cleanly in HTML.
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    if v != v:  # NaN check
+        return "—"
+    spec = f"{'+' if sign else ''},.{decimals}f"
+    return format(v, spec).replace(",", "\u202f")
+
+
+def fmt_eur(value, decimals: int = 0, sign: bool = False) -> str:
+    return f"{fmt_num(value, decimals=decimals, sign=sign)}€"
+
+
+def fmt_unit(value, decimals: int = 1, sign: bool = False) -> str:
+    return f"{fmt_num(value, decimals=decimals, sign=sign)} u"
+
+
+def fmt_money(
+    value, unit_mode: bool = False, decimals: int | None = None, sign: bool = False
+) -> str:
+    if unit_mode:
+        return fmt_unit(value, decimals=1 if decimals is None else decimals, sign=sign)
+    return fmt_eur(value, decimals=0 if decimals is None else decimals, sign=sign)
+
+
 # Place the logo as the last element in the sidebar and push it to the very bottom (centered)
 def _sidebar_logo_bottom_center(
     path: str = "logo_TeNNet.png", width: int = 100, padding_bottom: int = 0

@@ -64,15 +64,22 @@ data_explorer_page = st.Page(
 )
 
 if st.session_state.logged_in:
-    # compute in-play count to show next to the menu label, but cache it so it doesn't update on every rerun
+    # compute in-play count to show next to the menu label, but cache it with a short TTL
+    # so it stays fresh without re-querying on every Streamlit rerun.
+    import time
+    from config import INPLAY_BADGE_TTL
+
     cached = st.session_state.get("cached_total_inplay", None)
-    if cached is None:
+    cached_at = st.session_state.get("cached_total_inplay_at", 0)
+    is_stale = (time.time() - cached_at) > INPLAY_BADGE_TTL
+    if cached is None or is_stale:
         try:
             bets_data = prepare_bets_data(st.session_state["ID_USER"], finished=False)
             cached = len(bets_data) if bets_data is not None else 0
         except Exception:
             cached = 0
         st.session_state["cached_total_inplay"] = cached
+        st.session_state["cached_total_inplay_at"] = time.time()
 
     total_inplay = st.session_state.get("cached_total_inplay", 0)
 

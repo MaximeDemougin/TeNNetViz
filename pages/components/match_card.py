@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 
+from utils import fmt_eur
+
 
 def render_match_info(bets_data: pd.DataFrame, selected: list) -> None:
     """Render the right-hand Match info card based on selection or last match."""
@@ -63,7 +65,7 @@ def render_match_info(bets_data: pd.DataFrame, selected: list) -> None:
                 <div style='display:flex;gap:12px;flex-wrap:wrap;'>
                     <div style='background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;font-size:13px;color:#cbd5e1;'>📅 {match["Date"]}</div>
                     <div style='background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;font-size:13px;color:#cbd5e1;'>🎾 Joueur: {match["player_bet"]}</div>
-                    <div style='background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;font-size:13px;color:#cbd5e1;'>💰 Mise: {match["Mise"]:.2f}€</div>
+                    <div style='background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;font-size:13px;color:#cbd5e1;'>💰 Mise: {fmt_eur(match["Mise"], decimals=2)}</div>
                     <div style='background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;font-size:13px;color:#cbd5e1;'>📊 Cote: {match["Cote"]:.3f}</div>
                 </div>
             </div>
@@ -86,8 +88,8 @@ def render_match_info(bets_data: pd.DataFrame, selected: list) -> None:
         </div>
         <hr style='opacity:0.08;margin:14px 0;'>
         <div style='display:flex;gap:12px;flex-wrap:wrap;font-size:13px;color:#cbd5e1;'>
-            <div style='flex:1;min-width:160px;'><b style='color:#e6eef8;'>Cumul :</b> {match["Cumulative Gains"]:.2f}€</div>
-            <div style='flex:1;min-width:160px;'><b style='color:#e6eef8;'>Marge attendue :</b> {match["Marge attendue"]:.2f}€</div>
+            <div style='flex:1;min-width:160px;'><b style='color:#e6eef8;'>Cumul :</b> {fmt_eur(match["Cumulative Gains"], decimals=2)}</div>
+            <div style='flex:1;min-width:160px;'><b style='color:#e6eef8;'>Marge attendue :</b> {fmt_eur(match["Marge attendue"], decimals=2)}</div>
             <div style='flex:1;min-width:160px;'><b style='color:#e6eef8;'>ID Pari :</b> {match.name}</div>
         </div>
     </div>

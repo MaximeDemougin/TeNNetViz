@@ -33,10 +33,19 @@ def read_table(schema: str, table_name: str) -> pd.DataFrame:
     return df
 
 
-def read_sql_query(schema: str, query: str) -> pd.DataFrame:
+def read_sql_query(schema: str, query: str, params: dict | None = None) -> pd.DataFrame:
+    """Run a parameterized SQL query and return a DataFrame.
+
+    Use ``params`` (dict) and named placeholders ``:name`` in ``query`` to
+    prevent SQL injection. ``params=None`` is allowed for backward-compat
+    with literal SELECT queries that contain no user input.
+    """
     logger.info(f"Reading table from schema {schema} with query: {query}")
     connection = create_engine(f"{DB_URL}{schema}")
-    df = pd.read_sql_query(query, con=connection)
+    if params is not None:
+        df = pd.read_sql_query(text(query), con=connection, params=params)
+    else:
+        df = pd.read_sql_query(query, con=connection)
     connection.dispose()
     logger.info(f"Table read successfully, shape: {df.shape}")
     return df

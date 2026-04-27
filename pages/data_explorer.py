@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import pygwalker as pyg
 from data import prepare_bets_data
+from utils import fmt_eur
 
 st.set_page_config(
     layout="wide",
@@ -109,7 +110,7 @@ try:
     with col3:
         if "Gains net" in df.columns:
             total_gains = df["Gains net"].sum()
-            st.metric("💰 Gains totaux", f"{total_gains:.2f}€")
+            st.metric("💰 Gains totaux", fmt_eur(total_gains, decimals=2))
 
     st.markdown("---")
 
