@@ -881,9 +881,9 @@ def render_weekly_performance_chart(bets_data: pd.DataFrame) -> None:
 
     c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(fig_g, width="stretch")
+        st.plotly_chart(fig_g, width="stretch", key="weekly_perf_gains")
     with c2:
-        st.plotly_chart(fig_r, width="stretch")
+        st.plotly_chart(fig_r, width="stretch", key="weekly_perf_roi")
 
 
 def render_weekday_performance_chart(bets_data: pd.DataFrame) -> None:
@@ -1053,9 +1053,9 @@ def render_weekday_performance_chart(bets_data: pd.DataFrame) -> None:
 
     c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(fig_g, width="stretch")
+        st.plotly_chart(fig_g, width="stretch", key="weekday_perf_gains")
     with c2:
-        st.plotly_chart(fig_r, width="stretch")
+        st.plotly_chart(fig_r, width="stretch", key="weekday_perf_roi")
 
 
 def render_cote_histogram(bets_data: pd.DataFrame) -> None:

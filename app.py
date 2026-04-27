@@ -31,7 +31,7 @@ if not st.session_state.logged_in and _env_flag("TENNETVIZ_DEV_AUTO_LOGIN"):
     st.session_state.username = os.getenv("TENNETVIZ_DEV_USERNAME", "dev")
 
     # Cache bankroll once per user as well
-if (
+if st.session_state.get("ID_USER") is not None and (
     "bankroll_cached" not in st.session_state
     or st.session_state.get("bankroll_cached_user_id") != st.session_state.ID_USER
 ):
