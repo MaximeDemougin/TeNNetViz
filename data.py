@@ -15,6 +15,9 @@ from config import (
     MIN_PRED_BETABLE,
     BOOKMAKER_MARGIN_FACTOR,
     DATA_CACHE_TTL,
+    DATA_CACHE_TTL_FINISHED,
+    DATA_CACHE_TTL_INPLAY,
+    DATA_CACHE_TTL_FUTURE,
 )  # noqa: F401
 
 logger = logging.getLogger(__name__)
@@ -96,7 +99,7 @@ def load_bets(user_id: int):
     return _load_bets_cached(int(user_id) if user_id is not None else 0)
 
 
-@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+@st.cache_data(ttl=DATA_CACHE_TTL_FINISHED, show_spinner=False)
 def _load_bets_cached(user_id: int):
     query_bets = """SELECT b.*,
                             tourney_name,
@@ -462,7 +465,7 @@ def load_inplay_bets(user_id: int):
     return _load_inplay_bets_cached(int(user_id) if user_id is not None else 0)
 
 
-@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+@st.cache_data(ttl=DATA_CACHE_TTL_INPLAY, show_spinner=False)
 def _load_inplay_bets_cached(user_id: int):
     query_bets = """SELECT b.*,
                             tourney_name,
@@ -534,7 +537,7 @@ def load_future_matchs():
     return _load_future_matchs_cached()
 
 
-@st.cache_data(ttl=DATA_CACHE_TTL, show_spinner=False)
+@st.cache_data(ttl=DATA_CACHE_TTL_FUTURE, show_spinner=False)
 def _load_future_matchs_cached():
     query_matchs = """SELECT  tourney_name,
                             tourney_level,

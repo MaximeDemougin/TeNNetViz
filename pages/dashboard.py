@@ -552,6 +552,42 @@ if st.session_state.get("logged_in", False):
 
     st.divider()
 
+    # --- Distributions globales (charts auparavant orphelines) ---
+    if bets_data is not None and not bets_data.empty:
+        from pages.components.charts import (
+            render_cote_raw_histogram,
+            render_marge_raw_histogram,
+            render_surface_distribution_bar,
+            render_competition_distribution_bar,
+            render_weekly_performance_chart,
+            render_weekday_performance_chart,
+        )
+        from utils import csv_download_button
+
+        st.markdown("### 📊 Distributions globales")
+        tab_temp, tab_dist, tab_struct = st.tabs(
+            ["⏱ Temporel", "🎲 Cote / Marge", "🏟 Surface / Compét"]
+        )
+        with tab_temp:
+            render_weekly_performance_chart(bets_data)
+            render_weekday_performance_chart(bets_data)
+        with tab_dist:
+            render_cote_raw_histogram(bets_data, nbins=50)
+            render_marge_raw_histogram(bets_data, nbins=50)
+        with tab_struct:
+            render_surface_distribution_bar(bets_data)
+            render_competition_distribution_bar(bets_data)
+
+        # Export brut
+        csv_download_button(
+            bets_data,
+            label="📥 Exporter paris filtrés (CSV)",
+            filename="bets_filtered.csv",
+            key="dash_csv",
+        )
+
+    st.divider()
+
     # --- Auto-insights (best / worst segments) ---
     st.markdown("### 💡 Insights automatiques")
     render_insights_panel(bets_data, min_n=10, top_k=3)

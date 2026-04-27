@@ -766,6 +766,12 @@ def render_weekly_performance_chart(bets_data: pd.DataFrame) -> None:
     grouped["roi_attendu"] = np.where(
         grouped["mises"] > 0, grouped["marges"] / grouped["mises"] * 100, 0.0
     )
+    # Rounding cohérent: gains en € entiers, ROI 1 décimale
+    grouped["gains"] = grouped["gains"].round(0)
+    grouped["marges"] = grouped["marges"].round(0)
+    grouped["mises"] = grouped["mises"].round(0)
+    grouped["roi"] = grouped["roi"].round(1)
+    grouped["roi_attendu"] = grouped["roi_attendu"].round(1)
     grouped["label"] = grouped["_week"].dt.strftime("%d %b %Y")
     bar_colors = ["#32b296" if g >= 0 else "#e04e4e" for g in grouped["gains"]]
     roi_colors = ["#32b296" if r >= 0 else "#e04e4e" for r in grouped["roi"]]
@@ -806,7 +812,7 @@ def render_weekly_performance_chart(bets_data: pd.DataFrame) -> None:
             mode="lines+markers",
             line=dict(color="#3b82f6", width=2, dash="dot"),
             marker=dict(size=6),
-            hovertemplate="Attendu: %{y:+.1f}€<extra></extra>",
+            hovertemplate="Attendu: %{y:+.0f}€<extra></extra>",
         )
     )
     fig_g.add_hline(y=0, line_color="#4b5563", line_width=1, line_dash="dash")
@@ -923,6 +929,13 @@ def render_weekday_performance_chart(bets_data: pd.DataFrame) -> None:
     grouped["winrate"] = np.where(
         grouped["n"] > 0, grouped["wins"] / grouped["n"] * 100, 0.0
     )
+    # Rounding cohérent
+    grouped["gains"] = grouped["gains"].round(0)
+    grouped["marges"] = grouped["marges"].round(0)
+    grouped["mises"] = grouped["mises"].round(0)
+    grouped["roi"] = grouped["roi"].round(1)
+    grouped["roi_attendu"] = grouped["roi_attendu"].round(1)
+    grouped["winrate"] = grouped["winrate"].round(0)
     bar_colors_g = ["#32b296" if g >= 0 else "#e04e4e" for g in grouped["gains"]]
     bar_colors_r = ["#32b296" if r >= 0 else "#e04e4e" for r in grouped["roi"]]
 
@@ -968,7 +981,7 @@ def render_weekday_performance_chart(bets_data: pd.DataFrame) -> None:
             mode="lines+markers",
             line=dict(color="#3b82f6", width=2, dash="dot"),
             marker=dict(size=8),
-            hovertemplate="Attendu %{x}: %{y:+.1f}€<extra></extra>",
+            hovertemplate="Attendu %{x}: %{y:+.0f}€<extra></extra>",
         )
     )
     fig_g.add_hline(y=0, line_color="#4b5563", line_width=1, line_dash="dash")

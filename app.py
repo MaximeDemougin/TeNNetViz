@@ -63,6 +63,23 @@ data_explorer_page = st.Page(
     icon=":material/analytics:",
 )
 
+# New analytics pages
+alerts_page = st.Page(
+    "pages/alerts.py", title="Alertes", icon=":material/notifications_active:"
+)
+calibration_page = st.Page(
+    "pages/calibration.py", title="Calibration", icon=":material/track_changes:"
+)
+bankroll_page = st.Page(
+    "pages/bankroll.py", title="Bankroll & Kelly", icon=":material/savings:"
+)
+players_page = st.Page("pages/players.py", title="Joueurs", icon=":material/person:")
+streaks_page = st.Page(
+    "pages/streaks.py",
+    title="Streaks & Volatilité",
+    icon=":material/local_fire_department:",
+)
+
 if st.session_state.logged_in:
     # compute in-play count to show next to the menu label, but cache it with a short TTL
     # so it stays fresh without re-querying on every Streamlit rerun.
@@ -90,6 +107,7 @@ if st.session_state.logged_in:
             ],
             "Reports": [
                 dashboard,
+                alerts_page,
                 future_matchs_page,
                 st.Page(
                     "pages/bets_en_cours.py",
@@ -98,6 +116,10 @@ if st.session_state.logged_in:
                 ),
             ],
             "Analyse": [
+                calibration_page,
+                bankroll_page,
+                players_page,
+                streaks_page,
                 data_explorer_page,
             ],
         }

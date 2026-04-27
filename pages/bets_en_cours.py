@@ -205,6 +205,14 @@ if st.session_state.get("logged_in", False):
         bets_data["Gain potentiel"] = (
             bets_data["Mise"] * bets_data["Cote"] - bets_data["Mise"]
         )
+        # EV unit (Marge attendue / Mise) — utilisé comme priorité de suivi
+        try:
+            bets_data["_ev_unit"] = bets_data["Marge attendue"] / bets_data[
+                "Mise"
+            ].replace(0, float("nan"))
+            bets_data = bets_data.sort_values("_ev_unit", ascending=False)
+        except Exception:
+            pass
 
         # Separate bets by competition type
         atp_bets = bets_data[bets_data["Compétition"] == "Atp"]

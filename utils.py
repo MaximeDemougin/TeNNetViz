@@ -58,3 +58,102 @@ def _sidebar_logo_bottom_center(
         # fallback: add spacer then image
         st.sidebar.markdown("<div style='height:70vh;'></div>", unsafe_allow_html=True)
         st.sidebar.image(path, width=width)
+
+
+# ---------------------------------------------------------------------------
+# Centralized mappings (used in data preparation and UI rendering)
+# ---------------------------------------------------------------------------
+SURFACE_MAP = {
+    "Hard": "Dur",
+    "Grass": "Gazon",
+    "Clay": "Terre battue",
+}
+
+LEVEL_MAP = {
+    "C": "Challenger",
+    "A": "ATP 250/500",
+    "G": "Grand Chelem",
+    "M": "Masters 1000",
+    "I": "WTA 250",
+    "P": "WTA 500",
+    "PM": "WTA 1000",
+}
+
+ROUND_MAP = {
+    "F": "Finale",
+    "SF": "Demi-finale",
+    "QF": "Quart de finale",
+    "R16": "8emes de finale",
+    "R32": "16emes de finale",
+    "R64": "32emes de finale",
+    "R128": "64emes de finale",
+    "RR": "Round Robin",
+}
+
+SURFACE_COLORS = {
+    "Dur": "#3772d1",
+    "Terre battue": "#b45715",
+    "Gazon": "#22c55e",
+    "Carpet": "#8b5cf6",
+    "Indoor Hard": "#6366f1",
+}
+
+COMPET_COLORS = {
+    "atp": "#10b981",
+    "wta": "#ec4899",
+    "doubles": "#8b5cf6",
+    "challenger": "#6366f1",
+}
+
+
+def cote_bucket(c) -> str | None:
+    """Bucketize a cote (decimal odd) into a coarse band, or return None for NaN."""
+    try:
+        v = float(c)
+    except (TypeError, ValueError):
+        return None
+    if v != v:
+        return None
+    if v < 1.5:
+        return "<1.5"
+    if v < 2.0:
+        return "1.5-2.0"
+    if v < 2.5:
+        return "2.0-2.5"
+    if v < 3.0:
+        return "2.5-3.0"
+    if v < 5.0:
+        return "3.0-5.0"
+    return ">=5.0"
+
+
+def to_csv_bytes(df) -> bytes:
+    """Serialize a DataFrame to UTF-8 CSV bytes (BOM-prefixed for Excel compatibility)."""
+    try:
+        import pandas as pd  # noqa: F401
+
+        return ("\ufeff" + df.to_csv(index=False)).encode("utf-8")
+    except Exception:
+        return b""
+
+
+def csv_download_button(
+    df,
+    label: str = "📥 Exporter CSV",
+    filename: str = "export.csv",
+    key: str | None = None,
+):
+    """Render a Streamlit download button for a DataFrame."""
+    try:
+        if df is None or len(df) == 0:
+            return
+        st.download_button(
+            label=label,
+            data=to_csv_bytes(df),
+            file_name=filename,
+            mime="text/csv",
+            key=key,
+            use_container_width=False,
+        )
+    except Exception:
+        pass

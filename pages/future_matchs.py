@@ -180,6 +180,11 @@ filter_parier = st.checkbox(
     "Afficher seulement les opportunités (Parier ?)", value=False
 )
 
+# EV minimum filter
+min_ev_filter = st.slider(
+    "EV minimum (%)", min_value=-10.0, max_value=30.0, value=0.0, step=0.5
+)
+
 # Use column_config for nicer number formatting if available
 col_config = None
 try:
@@ -220,6 +225,8 @@ display_df = out[display_cols].copy()
 display_df["Parier ?"] = display_df["Parier ?"].astype(bool)
 if filter_parier:
     display_df = display_df[display_df["Parier ?"]]
+if min_ev_filter is not None:
+    display_df = display_df[display_df["EV_pct"] >= float(min_ev_filter)]
 
 
 # --- Ajout des colonnes de liens pour le tableau ---
@@ -315,6 +322,16 @@ try:
     st.dataframe(styler, width="stretch", column_config=col_config)
 except Exception:
     st.dataframe(display_df, width="stretch", column_config=col_config)
+
+# CSV export
+try:
+    from utils import csv_download_button
+
+    csv_download_button(
+        display_df, label="📥 Exporter slip CSV", filename="future_matchs.csv", key="fm_csv"
+    )
+except Exception:
+    pass
 
 # Show recommended bets as cards with link
 recommended = out[out["Parier ?"]].copy()
