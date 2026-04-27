@@ -3,7 +3,12 @@
 import pandas as pd
 import streamlit as st
 
-from data import load_match_features, load_match_predictions
+from data import (
+    get_features_table_name,
+    load_match_features,
+    load_match_predictions,
+    load_table_update_time,
+)
 from utils import csv_download_button
 
 
@@ -17,6 +22,114 @@ def _coerce_id(value):
         return int(value)
     except (TypeError, ValueError):
         return value
+
+
+def _find_update_timestamp(row: pd.Series):
+    candidates = (
+        "date_maj",
+        "dt_maj",
+        "updated_at",
+        "update_at",
+        "last_update",
+        "last_updated",
+        "created_at",
+        "timestamp",
+        "ts",
+    )
+    cols_lower = {str(col).lower(): col for col in row.index}
+
+    for name in candidates:
+        col = cols_lower.get(name)
+        if col is None:
+            continue
+        ts = pd.to_datetime(row.get(col), errors="coerce")
+        if pd.notna(ts):
+            return col, ts
+
+    for col in row.index:
+        col_name = str(col).lower()
+        if not any(
+            token in col_name for token in ("maj", "update", "timestamp", "date")
+        ):
+            continue
+        ts = pd.to_datetime(row.get(col), errors="coerce")
+        if pd.notna(ts):
+            return col, ts
+
+    return None, None
+
+
+def _format_elapsed_hm(timestamp) -> str | None:
+    if timestamp is None or pd.isna(timestamp):
+        return None
+
+    ts = pd.Timestamp(timestamp)
+    now = pd.Timestamp.now(tz=ts.tz) if ts.tzinfo is not None else pd.Timestamp.now()
+    delta = now - ts
+    total_minutes = max(int(delta.total_seconds() // 60), 0)
+    hours, minutes = divmod(total_minutes, 60)
+    return f"{hours:02d}:{minutes:02d}"
+
+
+def _render_update_caption(row: pd.Series, label: str):
+    col, timestamp = _find_update_timestamp(row)
+    if timestamp is None:
+        return
+
+    ts = pd.Timestamp(timestamp)
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert(None)
+
+    elapsed = _format_elapsed_hm(timestamp)
+    formatted_date = ts.strftime("%d/%m/%Y %H:%M")
+    if elapsed is None:
+        st.caption(f"{label} mis a jour le {formatted_date}")
+        return
+
+    st.caption(f"{label} mis a jour le {formatted_date} · il y a {elapsed} ({col})")
+
+
+def _render_table_update_caption(table_name: str | None, label: str):
+    if not table_name:
+        return
+
+    timestamp = load_table_update_time(table_name)
+    if timestamp is None:
+        return
+
+    ts = pd.Timestamp(timestamp)
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert(None)
+
+    elapsed = _format_elapsed_hm(timestamp)
+    formatted_date = ts.strftime("%d/%m/%Y %H:%M")
+    suffix = f" · il y a {elapsed}" if elapsed is not None else ""
+    st.caption(f"{label} mis a jour le {formatted_date}{suffix} (table {table_name})")
+
+
+def get_tables_update_text(table_names, label: str = "Maj base") -> str | None:
+    timestamps = []
+    for table_name in dict.fromkeys(table_names):
+        if not table_name:
+            continue
+        timestamp = load_table_update_time(table_name)
+        if timestamp is None:
+            continue
+        timestamps.append(pd.Timestamp(timestamp))
+
+    if not timestamps:
+        return None
+
+    latest = max(timestamps)
+    if latest.tzinfo is not None:
+        latest = latest.tz_convert(None)
+
+    elapsed = _format_elapsed_hm(latest)
+    formatted_date = latest.strftime("%d/%m/%Y %H:%M")
+    if elapsed is None:
+        return f"{label} {formatted_date}"
+
+    return f"{label} {formatted_date} · {elapsed}"
 
 
 def get_features_key(row, compet: str | None = None):
@@ -56,6 +169,8 @@ def show_features_dialog(match_id, compet: str, match_label: str, id_match=None)
     if preds is not None and not preds.empty:
         prow = preds.iloc[0]
         with st.expander("🔮 Prédictions", expanded=True):
+            _render_update_caption(prow, "Predictions")
+            _render_table_update_caption("predictions", "Predictions")
             # Affiche en priorité quelques colonnes connues, puis le reste
             preferred = [
                 "pred_w_used",
@@ -102,6 +217,8 @@ def show_features_dialog(match_id, compet: str, match_label: str, id_match=None)
         return
 
     row = feats.iloc[0]
+    _render_update_caption(row, "Features")
+    _render_table_update_caption(get_features_table_name(compet), "Features")
 
     # Pairing winner_/loser_
     paired = []

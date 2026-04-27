@@ -7,7 +7,10 @@ from datetime import timedelta
 
 from data import load_future_matchs
 from pages.components.charts import sort_competitions
-from pages.components.features_dialog import show_features_dialog
+from pages.components.features_dialog import (
+    get_tables_update_text,
+    show_features_dialog,
+)
 from utils import csv_download_button
 
 
@@ -177,7 +180,7 @@ _CARD_CSS = """
 """
 
 
-def _render_card(r: pd.Series) -> str:
+def _render_card(r: pd.Series, base_update_text: str | None = None) -> str:
     odds_url, flash_url = _build_links(r)
     ev = float(r["EV_pct"])
     ev_bg = _ev_color(ev)
@@ -198,6 +201,12 @@ def _render_card(r: pd.Series) -> str:
         except (TypeError, ValueError):
             key_val_disp = key_val
         key_chip = f"<span class='fm-chip'>{key_label}: {key_val_disp}</span>"
+
+    base_update_html = ""
+    if base_update_text:
+        base_update_html = (
+            f"<div class='fm-vs' style='margin-top:10px;'>🕒 {base_update_text}</div>"
+        )
 
     return f"""
 <div class='fm-card'>
@@ -220,6 +229,7 @@ def _render_card(r: pd.Series) -> str:
     <a class='fm-btn fm-btn-flash' href='{flash_url}' target='_blank'>Flashscore</a>
     <a class='fm-btn fm-btn-odds'  href='{odds_url}'  target='_blank'>Cotes</a>
   </div>
+    {base_update_html}
 </div>
 """
 
@@ -263,6 +273,9 @@ with st.expander("🛠 Debug colonnes (cache requête)", expanded=False):
         st.rerun()
 
 out = _build_rows(df)
+base_update_text = get_tables_update_text(
+    ["predictions", "odds", "men_matchs", "women_matchs", "double_matchs"]
+)
 
 # ---------------------------------------------------------------------------
 # Filtres (inline en haut)
@@ -356,7 +369,10 @@ for tab, comp in zip(tabs, comps_present):
                 cols = st.columns(3)
                 for i, (_, r) in enumerate(rows_list):
                     with cols[i % 3]:
-                        st.markdown(_render_card(r), unsafe_allow_html=True)
+                        st.markdown(
+                            _render_card(r, base_update_text=base_update_text),
+                            unsafe_allow_html=True,
+                        )
                         # Clé features : ID_TENNET pour simples, ID_MATCH pour doubles
                         is_doubles = str(r["Compétition"]).lower() == "doubles"
                         feat_key = r["ID_MATCH"] if is_doubles else r.get("ID_TENNET")

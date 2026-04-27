@@ -4,6 +4,11 @@ import os
 import re
 import sys
 
+
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 project_path = re.sub(
     r"TeNNetViz.*", "TeNNetViz/", os.path.dirname(os.path.abspath(__file__))
 )
@@ -19,6 +24,12 @@ if "logged_in" not in st.session_state:
 # Ensure a username key exists in session state
 if "username" not in st.session_state:
     st.session_state.username = ""
+
+if not st.session_state.logged_in and _env_flag("TENNETVIZ_DEV_AUTO_LOGIN"):
+    st.session_state.logged_in = True
+    st.session_state.ID_USER = int(os.getenv("TENNETVIZ_DEV_USER_ID", "1"))
+    st.session_state.username = os.getenv("TENNETVIZ_DEV_USERNAME", "dev")
+
     # Cache bankroll once per user as well
 if (
     "bankroll_cached" not in st.session_state

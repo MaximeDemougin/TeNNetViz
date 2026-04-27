@@ -2,7 +2,11 @@ import streamlit as st
 import pandas as pd
 from data import prepare_bets_data
 from utils import fmt_eur
-from pages.components.features_dialog import show_features_dialog, get_features_key
+from pages.components.features_dialog import (
+    get_features_key,
+    get_tables_update_text,
+    show_features_dialog,
+)
 
 st.set_page_config(
     layout="wide", page_icon="logo_TeNNet.png", page_title="Paris en cours"
@@ -50,7 +54,7 @@ st.markdown(
 st.title("Paris en cours", text_alignment="center")
 
 
-def display_bet_cards(bets_df, cols_per_row=3):
+def display_bet_cards(bets_df, cols_per_row=3, base_update_text: str | None = None):
     """Display bet cards in a grid layout"""
     if bets_df.empty:
         st.info("Aucun pari dans cette catégorie.")
@@ -76,6 +80,14 @@ def display_bet_cards(bets_df, cols_per_row=3):
 
                 # Build Flashscore URL
                 flashscore_url = f"https://www.flashscore.fr/match/{bet['ID_MATCH']}"
+
+                base_update_html = ""
+                if base_update_text:
+                    base_update_html = (
+                        "<div style='margin-top: 12px; text-align: center; "
+                        "font-size: 12px; color: #9ca3af; opacity: 0.8;'>"
+                        f"🕒 {base_update_text}</div>"
+                    )
 
                 # Create card HTML with hover effects and clickable link
                 card_html = f"""
@@ -198,6 +210,7 @@ def display_bet_cards(bets_df, cols_per_row=3):
                     '>
                         🔗 Cliquez pour voir sur Flashscore
                     </div>
+                    {base_update_html}
                 </a>
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
@@ -221,6 +234,9 @@ def display_bet_cards(bets_df, cols_per_row=3):
 
 if st.session_state.get("logged_in", False):
     bets_data = prepare_bets_data(st.session_state["ID_USER"], finished=False)
+    base_update_text = get_tables_update_text(
+        ["Bet", "predictions", "men_matchs", "women_matchs", "double_matchs"]
+    )
 
     if not bets_data.empty:
         # Calculate potential gains for all bets
@@ -748,7 +764,7 @@ if st.session_state.get("logged_in", False):
         st.markdown('<div id="atp-section"></div>', unsafe_allow_html=True)
         st.markdown("## 🎾 ATP")
         if not atp_bets.empty:
-            display_bet_cards(atp_bets)
+            display_bet_cards(atp_bets, base_update_text=base_update_text)
         else:
             st.markdown(
                 """
@@ -774,7 +790,7 @@ if st.session_state.get("logged_in", False):
         st.markdown('<div id="wta-section"></div>', unsafe_allow_html=True)
         st.markdown("## 👩‍🦰 WTA")
         if not wta_bets.empty:
-            display_bet_cards(wta_bets)
+            display_bet_cards(wta_bets, base_update_text=base_update_text)
         else:
             st.markdown(
                 """
@@ -800,7 +816,7 @@ if st.session_state.get("logged_in", False):
         st.markdown('<div id="doubles-section"></div>', unsafe_allow_html=True)
         st.markdown("## 🤝 Doubles")
         if not doubles_bets.empty:
-            display_bet_cards(doubles_bets)
+            display_bet_cards(doubles_bets, base_update_text=base_update_text)
         else:
             st.markdown(
                 """

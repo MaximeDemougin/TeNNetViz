@@ -12,10 +12,31 @@ import os
 import streamlit as st
 
 
-os.chdir(st.session_state["project_path"])
+def _resolve_project_path() -> str:
+    try:
+        project_path = st.session_state.get("project_path")
+    except Exception:
+        project_path = None
+
+    if project_path:
+        return project_path
+
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+project_path = _resolve_project_path()
+
+try:
+    st.session_state["project_path"] = project_path
+except Exception:
+    pass
+
+os.chdir(project_path)
 import sys
 
-sys.path.append(st.session_state["project_path"])
+if project_path not in sys.path:
+    sys.path.append(project_path)
+
 from db_utils.globals import DB_URL
 
 locale.setlocale(locale.LC_ALL, "")

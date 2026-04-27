@@ -6,8 +6,31 @@ import re
 import logging
 
 import sys
+import os
 
-sys.path.append(st.session_state["project_path"])
+
+def _resolve_project_path() -> str:
+    try:
+        project_path = st.session_state.get("project_path")
+    except Exception:
+        project_path = None
+
+    if project_path:
+        return project_path
+
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+project_path = _resolve_project_path()
+
+try:
+    st.session_state["project_path"] = project_path
+except Exception:
+    pass
+
+if project_path not in sys.path:
+    sys.path.append(project_path)
+
 from db_utils.db_utils import read_sql_query
 from config import (
     BDD_TENNIS as BDD,
@@ -556,6 +579,38 @@ _FEATURES_TABLE_BY_COMPET = {
     "doubles": ("double_features", "ID_MATCH"),
     "double": ("double_features", "ID_MATCH"),
 }
+
+
+def get_features_table_name(compet: str) -> str | None:
+    entry = _FEATURES_TABLE_BY_COMPET.get(str(compet).strip().lower())
+    if entry is None:
+        return None
+    table, _ = entry
+    return table
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_table_update_time(table_name: str):
+    if table_name is None or not str(table_name).strip():
+        return None
+
+    query = """
+        SELECT COALESCE(UPDATE_TIME, CREATE_TIME) AS updated_at
+        FROM information_schema.tables
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :table_name
+    """
+    try:
+        df = read_sql_query(BDD, query, params={"table_name": str(table_name)})
+    except Exception:
+        logger.exception("load_table_update_time: failed for table=%s", table_name)
+        return None
+
+    if df is None or df.empty or "updated_at" not in df.columns:
+        return None
+
+    timestamp = pd.to_datetime(df["updated_at"].iloc[0], errors="coerce")
+    return None if pd.isna(timestamp) else timestamp
 
 
 def load_match_features(match_id, compet: str):
