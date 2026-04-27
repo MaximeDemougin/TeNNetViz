@@ -328,7 +328,10 @@ try:
     from utils import csv_download_button
 
     csv_download_button(
-        display_df, label="📥 Exporter slip CSV", filename="future_matchs.csv", key="fm_csv"
+        display_df,
+        label="📥 Exporter slip CSV",
+        filename="future_matchs.csv",
+        key="fm_csv",
     )
 except Exception:
     pass
