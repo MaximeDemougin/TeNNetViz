@@ -1,6 +1,8 @@
 import streamlit as st
+import pandas as pd
 from data import prepare_bets_data
 from utils import fmt_eur
+from pages.components.features_dialog import show_features_dialog, get_features_key
 
 st.set_page_config(
     layout="wide", page_icon="logo_TeNNet.png", page_title="Paris en cours"
@@ -142,6 +144,10 @@ def display_bet_cards(bets_df, cols_per_row=3):
                     '>{bet["Match"]}</h3>
                     <div style='margin: 12px 0;'>
                         <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
+                            <span style='color: #9ca3af; font-size: 14px;'>🏟 Tournoi</span>
+                            <span style='font-weight: 600; color: #cbd5e1; text-align: right; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'>{bet.get("Tournoi", "—") or "—"}</span>
+                        </div>
+                        <div style='display: flex; justify-content: space-between; margin: 8px 0;'>
                             <span style='color: #9ca3af; font-size: 14px;'>📅 Date</span>
                             <span style='font-weight: 600;'>{bet["Date"]}</span>
                         </div>
@@ -195,6 +201,22 @@ def display_bet_cards(bets_df, cols_per_row=3):
                 </a>
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
+
+                # Bouton features (clé : ID_TENNET pour simples, ID_MATCH pour doubles)
+                key_label, key_val = get_features_key(bet)
+                btn_key = f"feat_inplay_{bet.get('ID_MATCH', '')}_{bet.get('player_bet', '')}_{idx}"
+                if st.button(
+                    "📊 Voir les features",
+                    key=btn_key,
+                    width="stretch",
+                    disabled=(key_val is None or pd.isna(key_val)),
+                ):
+                    show_features_dialog(
+                        key_val,
+                        bet.get("Compétition", ""),
+                        bet["Match"],
+                        id_match=bet.get("ID_MATCH"),
+                    )
 
 
 if st.session_state.get("logged_in", False):

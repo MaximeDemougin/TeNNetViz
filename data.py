@@ -116,7 +116,8 @@ def _load_bets_cached(user_id: int):
                             is_ratio_odds_W,
                             is_ratio_odds_L,
                             'doubles' = TRUE as doubles,
-                            'atp' as compet
+                            'atp' as compet,
+                            m.ID_TENNET
                                     FROM Bet b join men_matchs m on (b.ID_MATCH = m.ID_MATCH) 
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         WHERE match_settled in (1,2) and score != 'W/O' and status = 1
@@ -136,7 +137,8 @@ def _load_bets_cached(user_id: int):
                             is_ratio_odds_W,
                             is_ratio_odds_L,
                             'doubles' = TRUE as doubles,
-                            'wta' as compet
+                            'wta' as compet,
+                            m.ID_TENNET
                                     FROM  Bet b join women_matchs m on (b.ID_MATCH = m.ID_MATCH)
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         WHERE  match_settled in (1,2) and score != 'W/O' and status = 1
@@ -156,7 +158,8 @@ def _load_bets_cached(user_id: int):
                                 is_ratio_odds_W,
                                 is_ratio_odds_L,
                                 'doubles' = FALSE as doubles  ,
-                                'doubles' as compet
+                                'doubles' as compet,
+                                NULL as ID_TENNET
                                     FROM Bet b join double_matchs m  on (b.ID_MATCH = m.ID_MATCH) 
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         WHERE match_settled in (1,2) and score != 'W/O' and status = 1"""
@@ -266,6 +269,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             "ID_MATCH",
             "Match",
             "tourney_date",
+            "tourney_name",
             "compet",
             "surface",
             "tourney_level",
@@ -278,6 +282,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             "net_gain",
             "marge",
             "is_ratio_odds",
+            "ID_TENNET",
         ]
     ].copy()
     prepared_bets["compet"] = prepared_bets["compet"].str.title()
@@ -366,6 +371,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
     prepared_bets.rename(
         columns={
             "tourney_date": "Date",
+            "tourney_name": "Tournoi",
             "tourney_level": "Level",
             "compet": "Compétition",
             "surface": "Surface",
@@ -415,12 +421,14 @@ def prepare_bets_data(user_id: int, finished: bool = True):
                 {
                     "Date": "first",
                     "Compétition": "first",
+                    "Tournoi": "first",
                     "Level": "first",
                     "Round": "first",
                     "Surface": "first",
                     "Score": "first",
                     "Type de tournoi": "first",
                     "Ratio Odds": "first",
+                    "ID_TENNET": "first",
                     "Mise": "sum",
                     "Prédiction": "mean",
                     "Gains net": "sum",
@@ -481,7 +489,8 @@ def _load_inplay_bets_cached(user_id: int):
                             is_ratio_odds_W,
                             is_ratio_odds_L,
                             'doubles' = TRUE as doubles,
-                            'atp' as compet
+                            'atp' as compet,
+                            m.ID_TENNET
                                     FROM Bet b join men_matchs m on (b.ID_MATCH = m.ID_MATCH) 
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         WHERE not match_settled in (1,2)
@@ -500,7 +509,8 @@ def _load_inplay_bets_cached(user_id: int):
                             is_ratio_odds_W,
                             is_ratio_odds_L,
                             'doubles' = TRUE as doubles,
-                            'wta' as compet
+                            'wta' as compet,
+                            m.ID_TENNET
                                     FROM  Bet b join women_matchs m on (b.ID_MATCH = m.ID_MATCH)
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         WHERE  not match_settled in (1,2)
@@ -519,7 +529,8 @@ def _load_inplay_bets_cached(user_id: int):
                                 is_ratio_odds_W,
                                 is_ratio_odds_L,
                                 'doubles' = FALSE as doubles  ,
-                                'doubles' as compet
+                                'doubles' as compet,
+                                NULL as ID_TENNET
                                     FROM Bet b join double_matchs m  on (b.ID_MATCH = m.ID_MATCH) 
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         WHERE not match_settled in (1,2)"""
@@ -535,6 +546,72 @@ def load_future_matchs():
     Loads the future matchs from the database.
     """
     return _load_future_matchs_cached()
+
+
+_FEATURES_TABLE_BY_COMPET = {
+    "atp": ("men_features", "ID_TENNET"),
+    "men": ("men_features", "ID_TENNET"),
+    "wta": ("women_features", "ID_TENNET"),
+    "women": ("women_features", "ID_TENNET"),
+    "doubles": ("double_features", "ID_MATCH"),
+    "double": ("double_features", "ID_MATCH"),
+}
+
+
+def load_match_features(match_id, compet: str):
+    """
+    Charge les features calculées pour un match donné depuis
+    men_features / women_features / doubles_features selon `compet`.
+    - Simples (atp/wta) : jointure sur `ID_TENNET`.
+    - Doubles : jointure sur `ID_MATCH`.
+    Retourne un DataFrame (généralement 1 ligne) ou None si pas trouvé.
+    """
+    if match_id is None or not str(match_id).strip() or str(match_id).lower() == "nan":
+        return None
+    entry = _FEATURES_TABLE_BY_COMPET.get(str(compet).strip().lower())
+    if entry is None:
+        return None
+    table, key_col = entry
+    return _load_match_features_cached(str(match_id), table, key_col)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_match_features_cached(match_id: str, table: str, key_col: str):
+    # `table` et `key_col` sont contrôlés par _FEATURES_TABLE_BY_COMPET → pas d'injection.
+    query = f"SELECT * FROM {table} WHERE {key_col} = :match_id"
+    try:
+        return read_sql_query(BDD, query, params={"match_id": match_id})
+    except Exception:
+        logger.exception(
+            "load_match_features: failed for table=%s key=%s id=%s",
+            table,
+            key_col,
+            match_id,
+        )
+        return None
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_match_predictions(id_match):
+    """
+    Charge la ligne de la table `predictions` pour un ID_MATCH donné.
+    Retourne un DataFrame (en général 1 ligne) ou None.
+    """
+    if (
+        id_match is None
+        or str(id_match).strip() == ""
+        or str(id_match).lower() == "nan"
+    ):
+        return None
+    try:
+        return read_sql_query(
+            BDD,
+            "SELECT * FROM predictions WHERE ID_MATCH = :id_match",
+            params={"id_match": str(id_match)},
+        )
+    except Exception:
+        logger.exception("load_match_predictions: failed for ID_MATCH=%s", id_match)
+        return None
 
 
 @st.cache_data(ttl=DATA_CACHE_TTL_FUTURE, show_spinner=False)
@@ -553,7 +630,8 @@ def _load_future_matchs_cached():
                              o.liens as odds_lien,
                              MaxW as max_odds1,
                              MaxL as max_odds2,
-                             m.ID_MATCH
+                             m.ID_MATCH,
+                             m.ID_TENNET
                                     FROM men_matchs m 
                                     right join odds o on (m.ID_MATCH = o.id)
                                     right join predictions p on (m.ID_MATCH = p.ID_MATCH)
@@ -573,7 +651,8 @@ def _load_future_matchs_cached():
                              o.liens as odds_lien,
                              MaxW as max_odds1,
                              MaxL as max_odds2,
-                             m.ID_MATCH
+                             m.ID_MATCH,
+                             m.ID_TENNET
                                     FROM women_matchs m 
                                     right join odds o on (m.ID_MATCH = o.id)
                                     right join predictions p on (m.ID_MATCH = p.ID_MATCH)
@@ -593,7 +672,8 @@ def _load_future_matchs_cached():
                                 o.liens as odds_lien,
                                 MaxW as max_odds1,
                                 MaxL as max_odds2,
-                             m.ID_MATCH
+                             m.ID_MATCH,
+                             NULL as ID_TENNET
                                     FROM double_matchs m
                                     right join odds o on (m.ID_MATCH = o.id)
                                     right join predictions p on (m.ID_MATCH = p.ID_MATCH)
