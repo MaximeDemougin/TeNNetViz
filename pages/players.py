@@ -67,9 +67,7 @@ def aggregate(df_in: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
     a["ROI %"] = np.where(a["Mises"] > 0, a["Gains"] / a["Mises"] * 100, 0.0)
-    a["ROI attendu %"] = np.where(
-        a["Mises"] > 0, a["Marges"] / a["Mises"] * 100, 0.0
-    )
+    a["ROI attendu %"] = np.where(a["Mises"] > 0, a["Marges"] / a["Mises"] * 100, 0.0)
     a["Edge"] = a["ROI %"] - a["ROI attendu %"]
     a["Winrate %"] = np.where(a["n"] > 0, a["Wins"] / a["n"] * 100, 0.0)
     a = a.rename(columns={"player_bet": "Joueur", "n": "Nb paris"})
@@ -97,7 +95,7 @@ k1.metric("Joueurs analysés", fmt_num(len(agg)))
 k2.metric(
     "Profitables",
     f"{profitable} / {len(agg)}",
-    delta=f"{profitable/len(agg)*100:.0f}%",
+    delta=f"{profitable / len(agg) * 100:.0f}%",
 )
 k3.metric(
     "👑 Meilleur ROI",
@@ -165,6 +163,7 @@ fig_sc.update_yaxes(title_text="ROI (%)", gridcolor="rgba(100,100,120,0.15)")
 st.plotly_chart(fig_sc, width="stretch")
 
 st.divider()
+
 
 # ---------------------------------------------------------------------------
 # Top K
@@ -276,9 +275,7 @@ st.markdown("### 🔍 Détail joueur")
 
 dsel1, dsel2, dsel3 = st.columns([3, 3, 2])
 with dsel1:
-    sel_a = st.selectbox(
-        "Joueur à analyser", options=players_full, index=0, key="pl_a"
-    )
+    sel_a = st.selectbox("Joueur à analyser", options=players_full, index=0, key="pl_a")
 with dsel2:
     sel_b_choice = st.selectbox(
         "Comparer avec (optionnel)", options=["—"] + players_full, index=0, key="pl_b"
@@ -294,9 +291,7 @@ def _player_subset(player: str) -> pd.DataFrame:
     sub["_unit"] = np.where(sub["Mise"] > 0, sub["Gains net"] / sub["Mise"], 0.0)
     sub["_cum"] = sub["Gains net"].cumsum()
     minp = max(1, rolling_w // 2)
-    sub["_roll_roi"] = (
-        sub["_unit"].rolling(rolling_w, min_periods=minp).mean() * 100
-    )
+    sub["_roll_roi"] = sub["_unit"].rolling(rolling_w, min_periods=minp).mean() * 100
     return sub
 
 

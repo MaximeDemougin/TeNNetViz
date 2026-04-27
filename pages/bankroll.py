@@ -12,9 +12,7 @@ from data import prepare_bets_data
 from utils import fmt_eur
 
 
-st.set_page_config(
-    layout="wide", page_icon="logo_TeNNet.png", page_title="Bankroll"
-)
+st.set_page_config(layout="wide", page_icon="logo_TeNNet.png", page_title="Bankroll")
 st.title("💰 Bankroll")
 st.caption("Simulation Monte Carlo des prochains paris.")
 
@@ -309,9 +307,7 @@ else:
                 help="Décoche pour masquer une courbe sans la supprimer.",
             )
         with del_col:
-            to_delete = st.selectbox(
-                "Supprimer", options=["—"] + all_names, index=0
-            )
+            to_delete = st.selectbox("Supprimer", options=["—"] + all_names, index=0)
         with btn_col:
             st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
             if st.button("🗑️", width="stretch", disabled=(to_delete == "—")):
@@ -339,7 +335,9 @@ else:
         st.dataframe(recap, width="stretch", hide_index=True)
 
         if not visible_runs:
-            st.info("Aucun scénario sélectionné — coche au moins un scénario à afficher.")
+            st.info(
+                "Aucun scénario sélectionné — coche au moins un scénario à afficher."
+            )
         else:
             # Graphe de comparaison : médiane + bande p5-p95 par run
             palette = [
@@ -380,7 +378,7 @@ else:
                         x=np.concatenate([x, x[::-1]]),
                         y=np.concatenate([r["p95"], r["p5"][::-1]]),
                         fill="toself",
-                        fillcolor=f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},0.12)",
+                        fillcolor=f"rgba({int(color[1:3], 16)},{int(color[3:5], 16)},{int(color[5:7], 16)},0.12)",
                         line=dict(color="rgba(0,0,0,0)"),
                         showlegend=False,
                         hoverinfo="skip",
@@ -416,5 +414,7 @@ else:
                 legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
             )
             fig.update_xaxes(title_text="Pari #", gridcolor="rgba(100,100,120,0.15)")
-            fig.update_yaxes(title_text="Bankroll (€)", gridcolor="rgba(100,100,120,0.15)")
+            fig.update_yaxes(
+                title_text="Bankroll (€)", gridcolor="rgba(100,100,120,0.15)"
+            )
             st.plotly_chart(fig, width="stretch")
