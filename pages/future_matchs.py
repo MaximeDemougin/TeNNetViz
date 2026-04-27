@@ -65,7 +65,9 @@ def _build_match_rows(df: pd.DataFrame) -> pd.DataFrame:
         match_label = f"{winner_name} - {loser_name}"
 
         raw_tennet = r.get(id_tennet_col) if id_tennet_col else None
-        if raw_tennet is None or (isinstance(raw_tennet, float) and pd.isna(raw_tennet)):
+        if raw_tennet is None or (
+            isinstance(raw_tennet, float) and pd.isna(raw_tennet)
+        ):
             id_tennet_val = None
         else:
             try:
@@ -82,30 +84,32 @@ def _build_match_rows(df: pd.DataFrame) -> pd.DataFrame:
 
         odds_maj_val = r.get(odds_maj_col) if odds_maj_col else None
 
-        rows.append({
-            "ID_MATCH": r.get("ID_MATCH"),
-            "ID_TENNET": id_tennet_val,
-            "Match": match_label,
-            "W_name": winner_name,
-            "L_name": loser_name,
-            "W_pred": round(w_pred, 3),
-            "L_pred": round(l_pred, 3),
-            "W_odds": round(w_odds, 3),
-            "L_odds": round(l_odds, 3),
-            "W_ev": round(w_ev, 1),
-            "L_ev": round(l_ev, 1),
-            "W_betable": _is_betable(w_ev, w_pred),
-            "L_betable": _is_betable(l_ev, l_pred),
-            "Best_EV": round(max(w_ev, l_ev), 1),
-            "Any_betable": _is_betable(w_ev, w_pred) or _is_betable(l_ev, l_pred),
-            "Lien": r.get("odds_lien", ""),
-            "Tournoi": str(r.get("tourney_name") or ""),
-            "Competition": str(r.get("compet") or "").title(),
-            "Surface": str(r.get("surface") or ""),
-            "Round": str(r.get("round") or ""),
-            "Date": r.get("tourney_date"),
-            "odds_maj": odds_maj_val,
-        })
+        rows.append(
+            {
+                "ID_MATCH": r.get("ID_MATCH"),
+                "ID_TENNET": id_tennet_val,
+                "Match": match_label,
+                "W_name": winner_name,
+                "L_name": loser_name,
+                "W_pred": round(w_pred, 3),
+                "L_pred": round(l_pred, 3),
+                "W_odds": round(w_odds, 3),
+                "L_odds": round(l_odds, 3),
+                "W_ev": round(w_ev, 1),
+                "L_ev": round(l_ev, 1),
+                "W_betable": _is_betable(w_ev, w_pred),
+                "L_betable": _is_betable(l_ev, l_pred),
+                "Best_EV": round(max(w_ev, l_ev), 1),
+                "Any_betable": _is_betable(w_ev, w_pred) or _is_betable(l_ev, l_pred),
+                "Lien": r.get("odds_lien", ""),
+                "Tournoi": str(r.get("tourney_name") or ""),
+                "Competition": str(r.get("compet") or "").title(),
+                "Surface": str(r.get("surface") or ""),
+                "Round": str(r.get("round") or ""),
+                "Date": r.get("tourney_date"),
+                "odds_maj": odds_maj_val,
+            }
+        )
     out = pd.DataFrame(rows)
     out["Date"] = pd.to_datetime(out["Date"], errors="coerce")
     out["Heure"] = out["Date"].dt.strftime("%H:%M").fillna("")
@@ -184,18 +188,10 @@ _CARD_CSS = """
     color: #334155; font-size: 11px; font-weight: 700;
     padding: 0 2px; flex-shrink: 0;
 }
-.fm-footer {
-    display: flex; gap: 6px; margin-top: 11px;
-    align-items: center; flex-wrap: wrap;
+.fm-maj-row {
+    display: flex; justify-content: flex-end; margin-top: 10px;
 }
-.fm-btn {
-    text-decoration: none !important;
-    padding: 4px 12px; border-radius: 6px;
-    font-size: 11px; font-weight: 600; color: #fff !important;
-}
-.fm-btn-flash { background: #e11d48; }
-.fm-btn-odds  { background: #0891b2; }
-.fm-maj { color: #475569; font-size: 10px; margin-left: auto; white-space: nowrap; }
+.fm-maj { color: #475569; font-size: 10px; white-space: nowrap; }
 </style>
 """
 
@@ -209,15 +205,19 @@ def _render_match_card(r: pd.Series) -> str:
     l_cls = " fm-side--betable" if r["L_betable"] else ""
     card_cls = " fm-card--betable" if r["Any_betable"] else ""
 
-    flash_id = r.get("ID_MATCH") or ""
-    flash_url = f"https://www.flashscore.com/match/{flash_id}" if flash_id else "#"
-    odds_url = r.get("Lien") or "#"
-
-    surface_badge = f"<span class='fm-badge'>{r['Surface']}</span>" if r.get("Surface") else ""
-    round_badge = f"<span class='fm-badge'>{r['Round']}</span>" if r.get("Round") else ""
+    surface_badge = (
+        f"<span class='fm-badge'>{r['Surface']}</span>" if r.get("Surface") else ""
+    )
+    round_badge = (
+        f"<span class='fm-badge'>{r['Round']}</span>" if r.get("Round") else ""
+    )
 
     maj_text = _format_exact_ts(r.get("odds_maj"))
-    maj_html = f"<span class='fm-maj'>&#128338; {maj_text}</span>" if maj_text else ""
+    maj_html = (
+        f"<div class='fm-maj-row'><span class='fm-maj'>&#128338; {maj_text}</span></div>"
+        if maj_text
+        else ""
+    )
 
     w_name = str(r["W_name"])
     l_name = str(r["L_name"])
@@ -225,16 +225,16 @@ def _render_match_card(r: pd.Series) -> str:
     return f"""
 <div class='fm-card{card_cls}'>
   <div class='fm-header'>
-    <span class='fm-tournoi'>&#127967; {r['Tournoi']}</span>
+    <span class='fm-tournoi'>&#127967; {r["Tournoi"]}</span>
     <div class='fm-badges'>{surface_badge}{round_badge}</div>
-    <span class='fm-time'>&#9200; {r['Heure']}</span>
+    <span class='fm-time'>&#9200; {r["Heure"]}</span>
   </div>
   <div class='fm-sides'>
     <div class='fm-side{w_cls}'>
       <div class='fm-side-name'>{w_name}</div>
       <div class='fm-side-stats'>
-        <span class='fm-chip'>Pred {r['W_pred']:.2f}</span>
-        <span class='fm-chip'>Cote {r['W_odds']:.2f}</span>
+        <span class='fm-chip'>Pred {r["W_pred"]:.2f}</span>
+        <span class='fm-chip'>Cote {r["W_odds"]:.2f}</span>
         <span class='fm-ev' style='background:{ev_w_bg};'>EV {ev_w:+.1f}%</span>
       </div>
     </div>
@@ -242,17 +242,13 @@ def _render_match_card(r: pd.Series) -> str:
     <div class='fm-side{l_cls}'>
       <div class='fm-side-name'>{l_name}</div>
       <div class='fm-side-stats'>
-        <span class='fm-chip'>Pred {r['L_pred']:.2f}</span>
-        <span class='fm-chip'>Cote {r['L_odds']:.2f}</span>
+        <span class='fm-chip'>Pred {r["L_pred"]:.2f}</span>
+        <span class='fm-chip'>Cote {r["L_odds"]:.2f}</span>
         <span class='fm-ev' style='background:{ev_l_bg};'>EV {ev_l:+.1f}%</span>
       </div>
     </div>
   </div>
-  <div class='fm-footer'>
-    <a class='fm-btn fm-btn-flash' href='{flash_url}' target='_blank'>Flashscore</a>
-    <a class='fm-btn fm-btn-odds'  href='{odds_url}'  target='_blank'>Cotes</a>
-    {maj_html}
-  </div>
+  {maj_html}
 </div>
 """
 
@@ -383,32 +379,68 @@ for tab, comp in zip(tabs, comps_present):
                         st.markdown(_render_match_card(r), unsafe_allow_html=True)
                         is_doubles = str(r["Competition"]).lower() == "doubles"
                         feat_key = r["ID_MATCH"] if is_doubles else r.get("ID_TENNET")
-                        btn_key = f"feat_{r['ID_MATCH']}_{i}"
-                        if st.button(
-                            "Features",
-                            key=btn_key,
-                            width="stretch",
-                            disabled=(
-                                feat_key is None
-                                or (isinstance(feat_key, float) and pd.isna(feat_key))
-                            ),
-                        ):
-                            show_features_dialog(
-                                feat_key,
-                                r["Competition"],
-                                r["Match"],
-                                id_match=r["ID_MATCH"],
+                        feat_disabled = feat_key is None or (
+                            isinstance(feat_key, float) and pd.isna(feat_key)
+                        )
+                        flash_id = r.get("ID_MATCH") or ""
+                        flash_url = (
+                            f"https://www.flashscore.com/match/{flash_id}"
+                            if flash_id
+                            else None
+                        )
+                        odds_url = r.get("Lien") or None
+                        b1, b2, b3 = st.columns(3)
+                        with b1:
+                            st.link_button(
+                                "Flashscore",
+                                flash_url or "#",
+                                width="stretch",
+                                disabled=flash_url is None,
                             )
+                        with b2:
+                            st.link_button(
+                                "Cotes",
+                                odds_url or "#",
+                                width="stretch",
+                                disabled=odds_url is None,
+                            )
+                        with b3:
+                            btn_key = f"feat_{r['ID_MATCH']}_{i}"
+                            if st.button(
+                                "Features",
+                                key=btn_key,
+                                width="stretch",
+                                disabled=feat_disabled,
+                            ):
+                                show_features_dialog(
+                                    feat_key,
+                                    r["Competition"],
+                                    r["Match"],
+                                    id_match=r["ID_MATCH"],
+                                )
 
 # ---------------------------------------------------------------------------
 # Tableau detaille + export
 # ---------------------------------------------------------------------------
 with st.expander("Tableau detaille", expanded=False):
     export_cols = [
-        "Competition", "Tournoi", "Date", "Heure", "Match",
-        "W_name", "W_pred", "W_odds", "W_ev",
-        "L_name", "L_pred", "L_odds", "L_ev",
-        "Best_EV", "Any_betable", "Surface", "Round",
+        "Competition",
+        "Tournoi",
+        "Date",
+        "Heure",
+        "Match",
+        "W_name",
+        "W_pred",
+        "W_odds",
+        "W_ev",
+        "L_name",
+        "L_pred",
+        "L_odds",
+        "L_ev",
+        "Best_EV",
+        "Any_betable",
+        "Surface",
+        "Round",
     ]
     table = view[[c for c in export_cols if c in view.columns]].copy()
     col_config = {
