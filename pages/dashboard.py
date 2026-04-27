@@ -63,6 +63,37 @@ chartOptions = {
 
 st.title("🏆 Les résultats TeNNet", text_alignment="center")
 
+
+def _empty_bets_df() -> pd.DataFrame:
+    """Return an empty bets DataFrame with the expected schema."""
+    cols = [
+        "ID_MATCH",
+        "Match",
+        "Date",
+        "Compétition",
+        "Level",
+        "Round",
+        "Surface",
+        "Mise",
+        "Cote",
+        "Prédiction",
+        "Gains net",
+        "Marge attendue",
+        "Cumulative Gains",
+    ]
+    df = pd.DataFrame(columns=cols)
+    for num_col in [
+        "Mise",
+        "Cote",
+        "Prédiction",
+        "Gains net",
+        "Marge attendue",
+        "Cumulative Gains",
+    ]:
+        df[num_col] = df[num_col].astype(float)
+    return df
+
+
 # Cache bets data once per user in session_state to avoid repeated loads during reruns
 if st.session_state.get("logged_in", False):
     user_id = st.session_state.get("ID_USER")
@@ -79,33 +110,7 @@ if st.session_state.get("logged_in", False):
             )
             st.session_state["bets_data_user_id"] = user_id
         except Exception:
-            # Create empty DataFrame with proper schema on error
-            cols = [
-                "ID_MATCH",
-                "Match",
-                "Date",
-                "Compétition",
-                "Level",
-                "Round",
-                "Surface",
-                "Mise",
-                "Cote",
-                "Prédiction",
-                "Gains net",
-                "Marge attendue",
-                "Cumulative Gains",
-            ]
-            empty_df = pd.DataFrame(columns=cols)
-            for num_col in [
-                "Mise",
-                "Cote",
-                "Prédiction",
-                "Gains net",
-                "Marge attendue",
-                "Cumulative Gains",
-            ]:
-                empty_df[num_col] = empty_df[num_col].astype(float)
-            st.session_state["bets_data_cached"] = empty_df
+            st.session_state["bets_data_cached"] = _empty_bets_df()
 
 # For example, display user-specific data if logged in
 if st.session_state.get("logged_in", False):
@@ -114,33 +119,7 @@ if st.session_state.get("logged_in", False):
 
     # Ensure bets_data has the proper schema even if empty
     if bets_data.empty:
-        # Create empty DataFrame with expected schema
-        cols = [
-            "ID_MATCH",
-            "Match",
-            "Date",
-            "Compétition",
-            "Level",
-            "Round",
-            "Surface",
-            "Mise",
-            "Cote",
-            "Prédiction",
-            "Gains net",
-            "Marge attendue",
-            "Cumulative Gains",
-        ]
-        bets_data = pd.DataFrame(columns=cols)
-        # Ensure numeric columns have proper dtype
-        for num_col in [
-            "Mise",
-            "Cote",
-            "Prédiction",
-            "Gains net",
-            "Marge attendue",
-            "Cumulative Gains",
-        ]:
-            bets_data[num_col] = bets_data[num_col].astype(float)
+        bets_data = _empty_bets_df()
 
     # --- Sidebar filters: competition, cote range, date range ---
     try:
@@ -497,20 +476,9 @@ if st.session_state.get("logged_in", False):
         unsafe_allow_html=True,
     )
 
-    # Calculate statistics
-    total_bets = len(bets_data)
-    total_mises = bets_data["Mise"].sum()
-    total_gains = bets_data["Gains net"].sum()
-    total_marges = bets_data["Marge attendue"].sum()
-    wins = len(bets_data[bets_data["Gains net"] > 0])
-    win_rate = (wins / total_bets * 100) if total_bets > 0 else 0
-    roi = (total_gains / total_mises * 100) if total_mises > 0 else 0
-    marge_percentage = (total_marges / total_mises * 100) if total_mises > 0 else 0
-
-    # Display metric cards
-    # Render metrics via separate component (add top-level title)
+    # Render metrics via separate component
     st.markdown("### 📊 Vue d'ensemble", unsafe_allow_html=True)
-    metrics = render_metrics(bets_data, unit_mode=unit_mode)
+    render_metrics(bets_data, unit_mode=unit_mode)
 
     st.divider()
 
@@ -552,33 +520,10 @@ if st.session_state.get("logged_in", False):
 
     st.divider()
 
-    # --- Distributions globales (charts auparavant orphelines) ---
+    # Export brut
     if bets_data is not None and not bets_data.empty:
-        from pages.components.charts import (
-            render_cote_raw_histogram,
-            render_marge_raw_histogram,
-            render_surface_distribution_bar,
-            render_competition_distribution_bar,
-            render_weekly_performance_chart,
-            render_weekday_performance_chart,
-        )
         from utils import csv_download_button
 
-        st.markdown("### 📊 Distributions globales")
-        tab_temp, tab_dist, tab_struct = st.tabs(
-            ["⏱ Temporel", "🎲 Cote / Marge", "🏟 Surface / Compét"]
-        )
-        with tab_temp:
-            render_weekly_performance_chart(bets_data)
-            render_weekday_performance_chart(bets_data)
-        with tab_dist:
-            render_cote_raw_histogram(bets_data, nbins=50)
-            render_marge_raw_histogram(bets_data, nbins=50)
-        with tab_struct:
-            render_surface_distribution_bar(bets_data)
-            render_competition_distribution_bar(bets_data)
-
-        # Export brut
         csv_download_button(
             bets_data,
             label="📥 Exporter paris filtrés (CSV)",
