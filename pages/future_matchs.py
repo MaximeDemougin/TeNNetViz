@@ -1,5 +1,5 @@
-# ruff: noqa: E402
-"""Page Matchs à venir — refonte simplifiée."""
+﻿# ruff: noqa: E402
+"""Page Matchs à venir — cartes par match avec EV des deux côtés."""
 
 import streamlit as st
 import pandas as pd
@@ -8,7 +8,7 @@ from datetime import timedelta
 from data import load_future_matchs
 from pages.components.charts import sort_competitions
 from pages.components.features_dialog import (
-    get_tables_update_text,
+    _format_exact_ts,
     show_features_dialog,
 )
 from utils import csv_download_button
@@ -19,14 +19,7 @@ from utils import csv_download_button
 # ---------------------------------------------------------------------------
 MIN_PRED_BETABLE = 1.1
 MAX_PRED_BETABLE = 4.0
-MIN_MARGE = 2.0  # EV (%) minimum pour qu'un pari soit "rentable"
-
-COMP_COLORS = {
-    "atp": "#10b981",
-    "wta": "#ec4899",
-    "doubles": "#8b5cf6",
-    "challenger": "#6366f1",
-}
+MIN_MARGE = 2.0  # EV (%) minimum pour qu un pari soit "rentable"
 
 
 # ---------------------------------------------------------------------------
@@ -52,72 +45,67 @@ def _is_betable(ev: float, pred: float) -> bool:
 
 def _ev_color(ev: float) -> str:
     if ev > 10:
-        return "#a855f7"  # violet : edge fort
+        return "#a855f7"
     if ev > MIN_MARGE:
-        return "#32b296"  # vert : rentable
+        return "#32b296"
     if ev > 0:
-        return "#fbbf24"  # ambre : marge faible
-    return "#e04e4e"  # rouge : pas de valeur
+        return "#fbbf24"
+    return "#e04e4e"
 
 
-def _build_links(row: pd.Series) -> tuple[str, str]:
-    q = f"{row.get('Match', '')} {row.get('Joueur', '')}".strip().replace(" ", "+")
-    odds_url = row.get("Lien") or f"https://www.oddsportal.com/search/?q={q}"
-    flash_id = row.get("ID_MATCH") or ""
-    flash_url = (
-        f"https://www.flashscore.com/match/{flash_id}"
-        if flash_id
-        else f"https://www.flashscore.com/search/?q={q}"
-    )
-    return odds_url, flash_url
-
-
-def _build_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """Une ligne par joueur (winner + loser) avec EV calculé."""
-    # Recherche insensible à la casse pour ID_TENNET (selon driver SQL)
+def _build_match_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Une ligne par match avec les donnees W et L."""
     cols_lower = {c.lower(): c for c in df.columns}
     id_tennet_col = cols_lower.get("id_tennet")
+    odds_maj_col = cols_lower.get("odds_maj") or cols_lower.get("maj")
     rows = []
     for _, r in df.iterrows():
-        match_label = f"{r.get('winner_name', '')} - {r.get('loser_name', '')}"
+        winner_name = str(r.get("winner_name") or "")
+        loser_name = str(r.get("loser_name") or "")
+        match_label = f"{winner_name} - {loser_name}"
+
         raw_tennet = r.get(id_tennet_col) if id_tennet_col else None
-        # Forcer en int si possible (le NULL du UNION doubles fait passer la colonne en float)
-        if raw_tennet is None or (
-            isinstance(raw_tennet, float) and pd.isna(raw_tennet)
-        ):
+        if raw_tennet is None or (isinstance(raw_tennet, float) and pd.isna(raw_tennet)):
             id_tennet_val = None
         else:
             try:
                 id_tennet_val = int(raw_tennet)
             except (TypeError, ValueError):
                 id_tennet_val = raw_tennet
-        for side in ("winner", "loser"):
-            pred = pd.to_numeric(r.get(f"{side}_pred"), errors="coerce")
-            odds = pd.to_numeric(
-                r.get("max_odds1" if side == "winner" else "max_odds2"),
-                errors="coerce",
-            )
-            pred = float(pred) if pd.notna(pred) else 0.0
-            odds = float(odds) if pd.notna(odds) else 0.0
-            ev = _ev_pct(odds, pred)
-            rows.append(
-                {
-                    "ID_MATCH": r.get("ID_MATCH"),
-                    "ID_TENNET": id_tennet_val,
-                    "Match": match_label,
-                    "Joueur": r.get(f"{side}_name", ""),
-                    "Prédiction": round(pred, 3),
-                    "Cote": round(odds, 3),
-                    "EV_pct": round(ev, 1),
-                    "Parier ?": _is_betable(ev, pred),
-                    "Lien": r.get("odds_lien", ""),
-                    "Tournoi": r.get("tourney_name", ""),
-                    "Compétition": (r.get("compet") or "").title(),
-                    "Surface": r.get("surface", ""),
-                    "Round": r.get("round", ""),
-                    "Date": r.get("tourney_date"),
-                }
-            )
+
+        w_pred = float(pd.to_numeric(r.get("winner_pred"), errors="coerce") or 0)
+        l_pred = float(pd.to_numeric(r.get("loser_pred"), errors="coerce") or 0)
+        w_odds = float(pd.to_numeric(r.get("max_odds1"), errors="coerce") or 0)
+        l_odds = float(pd.to_numeric(r.get("max_odds2"), errors="coerce") or 0)
+        w_ev = _ev_pct(w_odds, w_pred)
+        l_ev = _ev_pct(l_odds, l_pred)
+
+        odds_maj_val = r.get(odds_maj_col) if odds_maj_col else None
+
+        rows.append({
+            "ID_MATCH": r.get("ID_MATCH"),
+            "ID_TENNET": id_tennet_val,
+            "Match": match_label,
+            "W_name": winner_name,
+            "L_name": loser_name,
+            "W_pred": round(w_pred, 3),
+            "L_pred": round(l_pred, 3),
+            "W_odds": round(w_odds, 3),
+            "L_odds": round(l_odds, 3),
+            "W_ev": round(w_ev, 1),
+            "L_ev": round(l_ev, 1),
+            "W_betable": _is_betable(w_ev, w_pred),
+            "L_betable": _is_betable(l_ev, l_pred),
+            "Best_EV": round(max(w_ev, l_ev), 1),
+            "Any_betable": _is_betable(w_ev, w_pred) or _is_betable(l_ev, l_pred),
+            "Lien": r.get("odds_lien", ""),
+            "Tournoi": str(r.get("tourney_name") or ""),
+            "Competition": str(r.get("compet") or "").title(),
+            "Surface": str(r.get("surface") or ""),
+            "Round": str(r.get("round") or ""),
+            "Date": r.get("tourney_date"),
+            "odds_maj": odds_maj_val,
+        })
     out = pd.DataFrame(rows)
     out["Date"] = pd.to_datetime(out["Date"], errors="coerce")
     out["Heure"] = out["Date"].dt.strftime("%H:%M").fillna("")
@@ -125,129 +113,158 @@ def _build_rows(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# CSS (cards)
+# CSS
 # ---------------------------------------------------------------------------
 _CARD_CSS = """
 <style>
 .fm-card {
-    background: linear-gradient(180deg, rgba(20,22,28,0.95), rgba(28,30,36,0.9));
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 10px;
-    padding: 12px 14px;
-    margin-bottom: 8px;
-    transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+    background: linear-gradient(160deg, rgba(18,20,28,0.98), rgba(26,28,38,0.96));
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    transition: all 0.2s ease;
+    font-family: 'Segoe UI', sans-serif;
 }
 .fm-card:hover {
     transform: translateY(-2px);
-    border-color: rgba(50,178,150,0.35);
-    box-shadow: 0 8px 22px rgba(0,0,0,0.45);
+    box-shadow: 0 12px 32px rgba(0,0,0,0.55);
+    border-color: rgba(100,120,200,0.25);
 }
-.fm-card-head {
-    display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+.fm-card--betable {
+    border-color: rgba(50,178,150,0.35) !important;
+    box-shadow: 0 0 12px rgba(50,178,150,0.06) inset;
 }
-.fm-player { font-weight:700; color:#ffffff; font-size:14px; }
-.fm-vs { color:#9ca3af; font-size:12px; }
-.fm-time { color:#cbd5e1; font-size:12px; font-weight:600; white-space:nowrap; }
-.fm-meta { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.fm-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    gap: 8px;
+}
+.fm-tournoi {
+    color: #94a3b8; font-size: 11px; flex: 1;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fm-badges { display: flex; gap: 4px; flex-shrink: 0; }
+.fm-badge {
+    padding: 2px 7px; border-radius: 5px; font-size: 10px;
+    background: rgba(255,255,255,0.06); color: #94a3b8;
+}
+.fm-time { color: #e2e8f0; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+.fm-sides { display: flex; gap: 8px; align-items: stretch; }
+.fm-side {
+    flex: 1; padding: 10px 11px; border-radius: 9px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    min-width: 0;
+}
+.fm-side--betable {
+    background: rgba(50,178,150,0.08);
+    border-color: rgba(50,178,150,0.25);
+}
+.fm-side-name {
+    font-weight: 700; font-size: 12px; color: #f1f5f9;
+    margin-bottom: 7px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+}
+.fm-side-stats { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 .fm-chip {
-    background: rgba(255,255,255,0.05);
-    color:#d1d4dc;
-    padding:3px 8px;
-    border-radius:6px;
-    font-size:11px;
+    background: rgba(255,255,255,0.06); color: #94a3b8;
+    padding: 2px 7px; border-radius: 5px; font-size: 10px;
 }
 .fm-ev {
-    padding:3px 9px;
-    border-radius:999px;
-    font-weight:700;
-    font-size:11px;
-    color:#ffffff;
+    padding: 3px 9px; border-radius: 999px;
+    font-weight: 700; font-size: 10px; color: #fff;
 }
-.fm-actions { display:flex; gap:6px; margin-top:10px; }
+.fm-vs-divider {
+    display: flex; align-items: center;
+    color: #334155; font-size: 11px; font-weight: 700;
+    padding: 0 2px; flex-shrink: 0;
+}
+.fm-footer {
+    display: flex; gap: 6px; margin-top: 11px;
+    align-items: center; flex-wrap: wrap;
+}
 .fm-btn {
-    flex:1;
-    text-align:center;
-    text-decoration:none;
-    padding:5px 8px;
-    border-radius:6px;
-    font-size:11px;
-    font-weight:700;
-    color:#fff;
+    text-decoration: none !important;
+    padding: 4px 12px; border-radius: 6px;
+    font-size: 11px; font-weight: 600; color: #fff !important;
 }
-.fm-btn-flash { background:#ff2d55; }
-.fm-btn-odds  { background:#0ea5a0; }
+.fm-btn-flash { background: #e11d48; }
+.fm-btn-odds  { background: #0891b2; }
+.fm-maj { color: #475569; font-size: 10px; margin-left: auto; white-space: nowrap; }
 </style>
 """
 
 
-def _render_card(r: pd.Series, base_update_text: str | None = None) -> str:
-    odds_url, flash_url = _build_links(r)
-    ev = float(r["EV_pct"])
-    ev_bg = _ev_color(ev)
-    surface_chip = (
-        f"<span class='fm-chip'>{r['Surface']}</span>" if r.get("Surface") else ""
-    )
-    round_chip = f"<span class='fm-chip'>{r['Round']}</span>" if r.get("Round") else ""
+def _render_match_card(r: pd.Series) -> str:
+    ev_w = float(r["W_ev"])
+    ev_l = float(r["L_ev"])
+    ev_w_bg = _ev_color(ev_w)
+    ev_l_bg = _ev_color(ev_l)
+    w_cls = " fm-side--betable" if r["W_betable"] else ""
+    l_cls = " fm-side--betable" if r["L_betable"] else ""
+    card_cls = " fm-card--betable" if r["Any_betable"] else ""
 
-    # Chip clé features (ID_TENNET pour simples, ID_MATCH pour doubles)
-    is_doubles = str(r.get("Compétition", "")).lower() == "doubles"
-    key_label = "ID_MATCH" if is_doubles else "ID_TENNET"
-    key_val = r.get("ID_MATCH") if is_doubles else r.get("ID_TENNET")
-    if key_val is None or (isinstance(key_val, float) and pd.isna(key_val)):
-        key_chip = f"<span class='fm-chip' style='color:#e04e4e;'>{key_label}: ∅</span>"
-    else:
-        try:
-            key_val_disp = int(key_val)
-        except (TypeError, ValueError):
-            key_val_disp = key_val
-        key_chip = f"<span class='fm-chip'>{key_label}: {key_val_disp}</span>"
+    flash_id = r.get("ID_MATCH") or ""
+    flash_url = f"https://www.flashscore.com/match/{flash_id}" if flash_id else "#"
+    odds_url = r.get("Lien") or "#"
 
-    base_update_html = ""
-    if base_update_text:
-        base_update_html = (
-            f"<div class='fm-vs' style='margin-top:10px;'>🕒 {base_update_text}</div>"
-        )
+    surface_badge = f"<span class='fm-badge'>{r['Surface']}</span>" if r.get("Surface") else ""
+    round_badge = f"<span class='fm-badge'>{r['Round']}</span>" if r.get("Round") else ""
+
+    maj_text = _format_exact_ts(r.get("odds_maj"))
+    maj_html = f"<span class='fm-maj'>&#128338; {maj_text}</span>" if maj_text else ""
+
+    w_name = str(r["W_name"])
+    l_name = str(r["L_name"])
 
     return f"""
-<div class='fm-card'>
-  <div class='fm-card-head'>
-    <div>
-      <div class='fm-player'>{r["Joueur"]}</div>
-      <div class='fm-vs'>{r["Match"]}</div>
+<div class='fm-card{card_cls}'>
+  <div class='fm-header'>
+    <span class='fm-tournoi'>&#127967; {r['Tournoi']}</span>
+    <div class='fm-badges'>{surface_badge}{round_badge}</div>
+    <span class='fm-time'>&#9200; {r['Heure']}</span>
+  </div>
+  <div class='fm-sides'>
+    <div class='fm-side{w_cls}'>
+      <div class='fm-side-name'>{w_name}</div>
+      <div class='fm-side-stats'>
+        <span class='fm-chip'>Pred {r['W_pred']:.2f}</span>
+        <span class='fm-chip'>Cote {r['W_odds']:.2f}</span>
+        <span class='fm-ev' style='background:{ev_w_bg};'>EV {ev_w:+.1f}%</span>
+      </div>
     </div>
-    <div class='fm-time'>{r["Heure"]}</div>
+    <div class='fm-vs-divider'>VS</div>
+    <div class='fm-side{l_cls}'>
+      <div class='fm-side-name'>{l_name}</div>
+      <div class='fm-side-stats'>
+        <span class='fm-chip'>Pred {r['L_pred']:.2f}</span>
+        <span class='fm-chip'>Cote {r['L_odds']:.2f}</span>
+        <span class='fm-ev' style='background:{ev_l_bg};'>EV {ev_l:+.1f}%</span>
+      </div>
+    </div>
   </div>
-  <div class='fm-meta'>
-    <span class='fm-chip'>Pred {r["Prédiction"]:.2f}</span>
-    <span class='fm-chip'>Cote {r["Cote"]:.2f}</span>
-    <span class='fm-ev' style='background:{ev_bg};'>EV {ev:+.1f}%</span>
-    {surface_chip}
-    {round_chip}
-    {key_chip}
-  </div>
-  <div class='fm-actions'>
+  <div class='fm-footer'>
     <a class='fm-btn fm-btn-flash' href='{flash_url}' target='_blank'>Flashscore</a>
     <a class='fm-btn fm-btn-odds'  href='{odds_url}'  target='_blank'>Cotes</a>
+    {maj_html}
   </div>
-    {base_update_html}
 </div>
 """
 
 
 # ---------------------------------------------------------------------------
-# Dialog : features du match (composant partagé)
-# ---------------------------------------------------------------------------
-_show_features_dialog = show_features_dialog
-
-
-# ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
-st.set_page_config(page_title="Matchs à venir", layout="wide")
-st.markdown("# 🔮 Matchs à venir")
+st.set_page_config(page_title="Matchs a venir", layout="wide")
+st.markdown("# Matchs a venir")
 st.caption(
-    "Prédictions et opportunités de paris à partir des cotes maximales disponibles. "
-    f"Critères : EV > {MIN_MARGE:.0f}% et cote entre {MIN_PRED_BETABLE} et {MAX_PRED_BETABLE}."
+    f"Toutes les predictions disponibles. "
+    f"Cartes vertes = EV > {MIN_MARGE:.0f}% avec cote entre {MIN_PRED_BETABLE} et {MAX_PRED_BETABLE}."
 )
 
 try:
@@ -257,7 +274,7 @@ except Exception as e:
     st.stop()
 
 if df is None or df.empty:
-    st.info("Aucun match à venir.")
+    st.info("Aucun match a venir.")
     st.stop()
 
 df = df.copy()
@@ -265,40 +282,33 @@ df["tourney_name"] = df["tourney_name"].astype(str)
 df["compet"] = df["compet"].astype(str).str.title()
 df["tourney_date"] = pd.to_datetime(df["tourney_date"], errors="coerce")
 
-# Debug : vérifie quelles colonnes sont retournées par la requête
-with st.expander("🛠 Debug colonnes (cache requête)", expanded=False):
-    st.write("Colonnes retournées :", list(df.columns))
-    if st.button("♻️ Vider le cache et recharger"):
-        st.cache_data.clear()
-        st.rerun()
-
-out = _build_rows(df)
-base_update_text = get_tables_update_text(
-    ["predictions", "odds", "men_matchs", "women_matchs", "double_matchs"]
-)
+out = _build_match_rows(df)
 
 # ---------------------------------------------------------------------------
-# Filtres (inline en haut)
+# Filtres
 # ---------------------------------------------------------------------------
-comp_options = sort_competitions(out["Compétition"].dropna().unique().tolist())
+comp_options = sort_competitions(out["Competition"].dropna().unique().tolist())
 
 f1, f2, f3 = st.columns([2, 2, 2])
 with f1:
     selected_comps = st.multiselect(
-        "Compétitions", options=comp_options, default=comp_options
+        "Competitions", options=comp_options, default=comp_options
     )
 with f2:
     only_betable = st.toggle(
-        "Opportunités uniquement",
-        value=True,
-        help="Afficher seulement les paris jugés rentables (Parier ?).",
+        "Opportunites uniquement",
+        value=False,
+        help="Afficher seulement les matchs avec au moins un cote rentable.",
     )
 with f3:
     min_ev = st.slider(
-        "EV minimum (%)", min_value=-10.0, max_value=30.0, value=0.0, step=0.5
+        "EV minimum (meilleur cote, %)",
+        min_value=-20.0,
+        max_value=30.0,
+        value=-20.0,
+        step=1.0,
     )
 
-# Plage de dates si possible
 if out["Date"].notna().any():
     min_dt = out["Date"].min().to_pydatetime()
     max_dt = out["Date"].max().to_pydatetime()
@@ -317,21 +327,21 @@ if out["Date"].notna().any():
         ]
 
 if selected_comps:
-    out = out[out["Compétition"].isin(selected_comps)]
-out = out[out["EV_pct"] >= float(min_ev)]
-view = out[out["Parier ?"]] if only_betable else out
+    out = out[out["Competition"].isin(selected_comps)]
+out = out[out["Best_EV"] >= float(min_ev)]
+view = out[out["Any_betable"]] if only_betable else out
 
 # ---------------------------------------------------------------------------
 # KPIs
 # ---------------------------------------------------------------------------
-nb_matchs = out["Match"].nunique()
-nb_opps = int(out["Parier ?"].sum())
-ev_mean = float(out.loc[out["Parier ?"], "EV_pct"].mean()) if nb_opps else 0.0
-ev_max = float(out["EV_pct"].max()) if not out.empty else 0.0
+nb_matchs = len(view)
+nb_opps = int(view["Any_betable"].sum())
+ev_mean = float(view.loc[view["Any_betable"], "Best_EV"].mean()) if nb_opps else 0.0
+ev_max = float(view["Best_EV"].max()) if not view.empty else 0.0
 
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Matchs", f"{nb_matchs}")
-k2.metric("Opportunités", f"{nb_opps}")
+k2.metric("Avec opportunite", f"{nb_opps}")
 k3.metric("EV moyen (opps)", f"{ev_mean:+.1f}%")
 k4.metric("EV max", f"{ev_max:+.1f}%")
 
@@ -342,83 +352,79 @@ if view.empty:
     st.stop()
 
 # ---------------------------------------------------------------------------
-# Vue principale : tabs par compétition, regroupé par tournoi
+# Vue principale : tabs par competition -> expanders par tournoi -> grille 3 cols
 # ---------------------------------------------------------------------------
 st.markdown(_CARD_CSS, unsafe_allow_html=True)
 
-comps_present = sort_competitions(view["Compétition"].dropna().unique().tolist())
-tabs = st.tabs([f"{c} ({(view['Compétition'] == c).sum()})" for c in comps_present])
+comps_present = sort_competitions(view["Competition"].dropna().unique().tolist())
+tabs = st.tabs([f"{c} ({(view['Competition'] == c).sum()})" for c in comps_present])
 
 for tab, comp in zip(tabs, comps_present):
     with tab:
-        sub = view[view["Compétition"] == comp]
-        # Tri tournois par première date
+        sub = view[view["Competition"] == comp].sort_values(
+            ["Date", "Best_EV"], ascending=[True, False]
+        )
         tournament_order = (
             sub.groupby("Tournoi")["Date"].min().sort_values().index.tolist()
         )
         for tournoi in tournament_order:
-            t_rows = sub[sub["Tournoi"] == tournoi].sort_values(
-                ["Date", "EV_pct"], ascending=[True, False]
-            )
+            t_rows = sub[sub["Tournoi"] == tournoi]
+            nb = len(t_rows)
+            nb_opp = int(t_rows["Any_betable"].sum())
+            opp_label = f" - {nb_opp} opp" if nb_opp else ""
             with st.expander(
-                f"🏟 {tournoi} — {len(t_rows)} pari{'s' if len(t_rows) > 1 else ''}",
+                f"Tournoi {tournoi} - {nb} match{'s' if nb > 1 else ''}{opp_label}",
                 expanded=(len(tournament_order) <= 3),
             ):
-                # Affichage en grille 3 colonnes : carte HTML + bouton Features
                 rows_list = list(t_rows.iterrows())
                 cols = st.columns(3)
                 for i, (_, r) in enumerate(rows_list):
                     with cols[i % 3]:
-                        st.markdown(
-                            _render_card(r, base_update_text=base_update_text),
-                            unsafe_allow_html=True,
-                        )
-                        # Clé features : ID_TENNET pour simples, ID_MATCH pour doubles
-                        is_doubles = str(r["Compétition"]).lower() == "doubles"
+                        st.markdown(_render_match_card(r), unsafe_allow_html=True)
+                        is_doubles = str(r["Competition"]).lower() == "doubles"
                         feat_key = r["ID_MATCH"] if is_doubles else r.get("ID_TENNET")
-                        btn_key = f"feat_{r['ID_MATCH']}_{r['Joueur']}_{i}"
+                        btn_key = f"feat_{r['ID_MATCH']}_{i}"
                         if st.button(
-                            "📊 Voir les features",
+                            "Features",
                             key=btn_key,
                             width="stretch",
-                            disabled=(feat_key is None or pd.isna(feat_key)),
+                            disabled=(
+                                feat_key is None
+                                or (isinstance(feat_key, float) and pd.isna(feat_key))
+                            ),
                         ):
-                            _show_features_dialog(
+                            show_features_dialog(
                                 feat_key,
-                                r["Compétition"],
+                                r["Competition"],
                                 r["Match"],
                                 id_match=r["ID_MATCH"],
                             )
 
 # ---------------------------------------------------------------------------
-# Tableau complet + export
+# Tableau detaille + export
 # ---------------------------------------------------------------------------
-with st.expander("📋 Tableau détaillé", expanded=False):
-    cols = [
-        "Compétition",
-        "Tournoi",
-        "Date",
-        "Heure",
-        "Match",
-        "Joueur",
-        "Prédiction",
-        "Cote",
-        "EV_pct",
-        "Parier ?",
-        "Surface",
-        "Round",
+with st.expander("Tableau detaille", expanded=False):
+    export_cols = [
+        "Competition", "Tournoi", "Date", "Heure", "Match",
+        "W_name", "W_pred", "W_odds", "W_ev",
+        "L_name", "L_pred", "L_odds", "L_ev",
+        "Best_EV", "Any_betable", "Surface", "Round",
     ]
-    table = view[cols].copy()
+    table = view[[c for c in export_cols if c in view.columns]].copy()
     col_config = {
-        "Prédiction": st.column_config.NumberColumn("Prédiction", format="%.2f"),
-        "Cote": st.column_config.NumberColumn("Cote", format="%.2f"),
-        "EV_pct": st.column_config.NumberColumn("EV %", format="%+.1f"),
+        "W_pred": st.column_config.NumberColumn("Pred W", format="%.2f"),
+        "L_pred": st.column_config.NumberColumn("Pred L", format="%.2f"),
+        "W_odds": st.column_config.NumberColumn("Cote W", format="%.2f"),
+        "L_odds": st.column_config.NumberColumn("Cote L", format="%.2f"),
+        "W_ev": st.column_config.NumberColumn("EV W%", format="%+.1f"),
+        "L_ev": st.column_config.NumberColumn("EV L%", format="%+.1f"),
+        "Best_EV": st.column_config.NumberColumn("Best EV%", format="%+.1f"),
         "Date": st.column_config.DatetimeColumn("Date", format="DD/MM/YYYY"),
     }
     st.dataframe(table, width="stretch", hide_index=True, column_config=col_config)
     csv_download_button(
         table,
-        label="📥 Exporter CSV",
+        label="Exporter CSV",
         filename="future_matchs.csv",
         key="fm_csv",
     )

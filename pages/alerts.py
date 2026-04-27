@@ -10,12 +10,13 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from data import load_future_matchs, prepare_bets_data
+from data import load_future_matchs, load_inplay_bets, prepare_bets_data
 from utils import fmt_eur, fmt_num
 from config import (
     ALERT_AVG_COTE_MAX,
     ALERT_DRAWDOWN_MAX_PCT,
     ALERT_HOT_PICK_EV_MIN,
+    ALERT_MATCH_STALE_HOURS,
     ALERT_RECENT_BETS_WINDOW,
     ALERT_WINRATE_MIN,
     MAX_PRED_BETABLE,
@@ -59,6 +60,41 @@ def _alert_card(level: str, title: str, msg: str):
         """,
         unsafe_allow_html=True,
     )
+
+
+def _find_update_timestamp(row: pd.Series):
+    candidates = (
+        "date_maj",
+        "dt_maj",
+        "updated_at",
+        "update_at",
+        "last_update",
+        "last_updated",
+        "created_at",
+        "timestamp",
+        "ts",
+    )
+    cols_lower = {str(col).lower(): col for col in row.index}
+
+    for name in candidates:
+        col = cols_lower.get(name)
+        if col is None:
+            continue
+        ts = pd.to_datetime(row.get(col), errors="coerce")
+        if pd.notna(ts):
+            return col, pd.Timestamp(ts)
+
+    for col in row.index:
+        col_name = str(col).lower()
+        if not any(
+            token in col_name for token in ("maj", "update", "timestamp", "date")
+        ):
+            continue
+        ts = pd.to_datetime(row.get(col), errors="coerce")
+        if pd.notna(ts):
+            return col, pd.Timestamp(ts)
+
+    return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +220,73 @@ else:
         ("warn", "Pas d'historique de paris", "Aucun pari terminé pour analyser.")
     )
 
+inplay_bets = pd.DataFrame()
+try:
+    inplay_bets = load_inplay_bets(st.session_state["ID_USER"])
+except Exception:
+    inplay_bets = pd.DataFrame()
+
+if inplay_bets is not None and not inplay_bets.empty:
+    stale_count = 0
+    overdue_count = 0
+    inplay_eval = inplay_bets.copy()
+
+    inplay_eval["tourney_date"] = pd.to_datetime(
+        inplay_eval.get("tourney_date"), errors="coerce"
+    )
+    inplay_eval["match_settled"] = pd.to_numeric(
+        inplay_eval.get("match_settled"), errors="coerce"
+    )
+    inplay_eval["Match"] = (
+        inplay_eval.get("winner_name", "").astype(str)
+        + " - "
+        + inplay_eval.get("loser_name", "").astype(str)
+    )
+    inplay_eval["Compétition"] = inplay_eval.get("compet", "").astype(str).str.title()
+
+    now = pd.Timestamp.now()
+
+    def _row_update_ts(row):
+        _, ts = _find_update_timestamp(row)
+        return ts
+
+    inplay_eval["_update_ts"] = inplay_eval.apply(_row_update_ts, axis=1)
+    inplay_eval["_hours_since_update"] = (
+        now - inplay_eval["_update_ts"]
+    ).dt.total_seconds() / 3600
+    inplay_eval["_hours_since_match"] = (
+        now - inplay_eval["tourney_date"]
+    ).dt.total_seconds() / 3600
+
+    stale_mask = inplay_eval["_hours_since_update"].notna() & (
+        inplay_eval["_hours_since_update"] >= float(ALERT_MATCH_STALE_HOURS)
+    )
+    overdue_mask = (
+        inplay_eval["_hours_since_match"].notna()
+        & (inplay_eval["_hours_since_match"] > 24)
+        & (~inplay_eval["match_settled"].isin([1, 2]))
+    )
+
+    stale_count = int(stale_mask.sum())
+    overdue_count = int(overdue_mask.sum())
+
+    if stale_count > 0:
+        alerts.append(
+            (
+                "warn",
+                f"{stale_count} match(s) non mis a jour depuis longtemps",
+                f"Mise a jour > {ALERT_MATCH_STALE_HOURS}h sur des matchs non settles.",
+            )
+        )
+    if overdue_count > 0:
+        alerts.append(
+            (
+                "alert",
+                f"{overdue_count} match(s) > 24h toujours non settles",
+                "Matchs dans le passe depuis plus de 24h avec match_settled != 1 ou 2.",
+            )
+        )
+
 # Render alerts
 if not alerts:
     _alert_card("ok", "Tout va bien", "Aucune alerte à signaler.")
@@ -193,6 +296,111 @@ else:
     alerts.sort(key=lambda a: order.get(a[0], 99))
     for lvl, title, msg in alerts:
         _alert_card(lvl, title, msg)
+
+
+# ---------------------------------------------------------------------------
+# Matchs non mis a jour / non settles
+# ---------------------------------------------------------------------------
+st.divider()
+st.markdown("### 🛠️ Matchs a surveiller")
+
+if inplay_bets is None or inplay_bets.empty:
+    st.info("Aucun match in-play/non settle a verifier.")
+else:
+    watch_df = inplay_bets.copy()
+    watch_df["tourney_date"] = pd.to_datetime(
+        watch_df.get("tourney_date"), errors="coerce"
+    )
+    watch_df["match_settled"] = pd.to_numeric(
+        watch_df.get("match_settled"), errors="coerce"
+    )
+    watch_df["Match"] = (
+        watch_df.get("winner_name", "").astype(str)
+        + " - "
+        + watch_df.get("loser_name", "").astype(str)
+    )
+    watch_df["Compétition"] = watch_df.get("compet", "").astype(str).str.title()
+
+    now = pd.Timestamp.now()
+
+    def _extract_update_ts(row):
+        _, ts = _find_update_timestamp(row)
+        return ts
+
+    watch_df["_update_ts"] = watch_df.apply(_extract_update_ts, axis=1)
+    watch_df["Heures depuis update"] = (
+        now - watch_df["_update_ts"]
+    ).dt.total_seconds() / 3600
+    watch_df["Heures depuis match"] = (
+        now - watch_df["tourney_date"]
+    ).dt.total_seconds() / 3600
+
+    stale_list = watch_df[
+        watch_df["Heures depuis update"].notna()
+        & (watch_df["Heures depuis update"] >= float(ALERT_MATCH_STALE_HOURS))
+    ].copy()
+    stale_list = stale_list.sort_values("Heures depuis update", ascending=False)
+
+    st.markdown(
+        f"#### ⏱️ Matchs non mis a jour depuis longtemps (>{ALERT_MATCH_STALE_HOURS}h)"
+    )
+    if stale_list.empty:
+        st.success("Aucun match stale detecte.")
+    else:
+        stale_display = stale_list[
+            [
+                "tourney_date",
+                "Compétition",
+                "Match",
+                "match_settled",
+                "Heures depuis update",
+            ]
+        ].rename(
+            columns={
+                "tourney_date": "Date match",
+                "match_settled": "match_settled",
+            }
+        )
+        stale_display["Date match"] = stale_display["Date match"].dt.strftime(
+            "%d/%m/%Y %H:%M"
+        )
+        stale_display["Heures depuis update"] = stale_display[
+            "Heures depuis update"
+        ].round(1)
+        st.dataframe(stale_display, width="stretch", hide_index=True)
+
+    overdue_list = watch_df[
+        watch_df["Heures depuis match"].notna()
+        & (watch_df["Heures depuis match"] > 24)
+        & (~watch_df["match_settled"].isin([1, 2]))
+    ].copy()
+    overdue_list = overdue_list.sort_values("Heures depuis match", ascending=False)
+
+    st.markdown("#### 🕒 Matchs > 24h dans le passe avec match_settled != 1 ou 2")
+    if overdue_list.empty:
+        st.success("Aucun match en retard de settlement (>24h).")
+    else:
+        overdue_display = overdue_list[
+            [
+                "tourney_date",
+                "Compétition",
+                "Match",
+                "match_settled",
+                "Heures depuis match",
+            ]
+        ].rename(
+            columns={
+                "tourney_date": "Date match",
+                "match_settled": "match_settled",
+            }
+        )
+        overdue_display["Date match"] = overdue_display["Date match"].dt.strftime(
+            "%d/%m/%Y %H:%M"
+        )
+        overdue_display["Heures depuis match"] = overdue_display[
+            "Heures depuis match"
+        ].round(1)
+        st.dataframe(overdue_display, width="stretch", hide_index=True)
 
 
 # ---------------------------------------------------------------------------

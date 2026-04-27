@@ -3,6 +3,7 @@ import pandas as pd
 from data import prepare_bets_data
 from utils import fmt_eur
 from pages.components.features_dialog import (
+    _format_exact_ts,
     get_features_key,
     get_tables_update_text,
     show_features_dialog,
@@ -82,7 +83,14 @@ def display_bet_cards(bets_df, cols_per_row=3, base_update_text: str | None = No
                 flashscore_url = f"https://www.flashscore.fr/match/{bet['ID_MATCH']}"
 
                 base_update_html = ""
-                if base_update_text:
+                _bet_maj = _format_exact_ts(bet.get("odds_maj"))
+                if _bet_maj:
+                    base_update_html = (
+                        "<div style='margin-top: 12px; text-align: center; "
+                        "font-size: 12px; color: #9ca3af; opacity: 0.8;'>"
+                        f"🕒 Maj odds : {_bet_maj}</div>"
+                    )
+                elif base_update_text:
                     base_update_html = (
                         "<div style='margin-top: 12px; text-align: center; "
                         "font-size: 12px; color: #9ca3af; opacity: 0.8;'>"

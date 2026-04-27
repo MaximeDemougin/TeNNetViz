@@ -4,9 +4,10 @@ import pandas as pd
 import streamlit as st
 
 from data import (
-    get_features_table_name,
     load_match_features,
+    load_match_odds,
     load_match_predictions,
+    load_odds_latest_maj_time,
     load_table_update_time,
 )
 from utils import csv_download_button
@@ -63,8 +64,12 @@ def _format_elapsed_hm(timestamp) -> str | None:
     if timestamp is None or pd.isna(timestamp):
         return None
 
-    ts = pd.Timestamp(timestamp)
-    now = pd.Timestamp.now(tz=ts.tz) if ts.tzinfo is not None else pd.Timestamp.now()
+    ts = _to_real_utc_naive(timestamp)
+    if ts is None:
+        return None
+    now = _to_real_utc_naive(pd.Timestamp.now())
+    if now is None:
+        now = pd.Timestamp.now()
     delta = now - ts
     total_minutes = max(int(delta.total_seconds() // 60), 0)
     hours, minutes = divmod(total_minutes, 60)
@@ -93,13 +98,16 @@ def _render_table_update_caption(table_name: str | None, label: str):
     if not table_name:
         return
 
-    timestamp = load_table_update_time(table_name)
+    if str(table_name).strip().lower() == "odds":
+        timestamp = load_odds_latest_maj_time()
+    else:
+        timestamp = load_table_update_time(table_name)
     if timestamp is None:
         return
 
-    ts = pd.Timestamp(timestamp)
-    if ts.tzinfo is not None:
-        ts = ts.tz_convert(None)
+    ts = _to_real_utc_naive(timestamp)
+    if ts is None:
+        return
 
     elapsed = _format_elapsed_hm(timestamp)
     formatted_date = ts.strftime("%d/%m/%Y %H:%M")
@@ -112,18 +120,20 @@ def get_tables_update_text(table_names, label: str = "Maj base") -> str | None:
     for table_name in dict.fromkeys(table_names):
         if not table_name:
             continue
-        timestamp = load_table_update_time(table_name)
+        if str(table_name).strip().lower() == "odds":
+            timestamp = load_odds_latest_maj_time()
+        else:
+            timestamp = load_table_update_time(table_name)
         if timestamp is None:
             continue
-        timestamps.append(pd.Timestamp(timestamp))
+        ts = _to_real_utc_naive(timestamp)
+        if ts is not None:
+            timestamps.append(ts)
 
     if not timestamps:
         return None
 
     latest = max(timestamps)
-    if latest.tzinfo is not None:
-        latest = latest.tz_convert(None)
-
     elapsed = _format_elapsed_hm(latest)
     formatted_date = latest.strftime("%d/%m/%Y %H:%M")
     if elapsed is None:
@@ -148,6 +158,49 @@ def get_features_key(row, compet: str | None = None):
     return "ID_TENNET", None
 
 
+def _build_paired_table(
+    row: pd.Series, pairs: list[tuple[str, str, str]]
+) -> pd.DataFrame:
+    rows = []
+    for stat, w_col, l_col in pairs:
+        if w_col in row.index and l_col in row.index:
+            rows.append(
+                {
+                    "Stat": stat,
+                    "Winner": row.get(w_col),
+                    "Loser": row.get(l_col),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _frame_height(n_rows: int, min_height: int = 90, max_height: int = 360) -> int:
+    # Approx: header + n rows with compact padding.
+    return max(min_height, min(max_height, 38 + max(int(n_rows), 1) * 35))
+
+
+def _format_exact_ts(value) -> str | None:
+    ts = _to_real_utc_naive(value)
+    if ts is not None:
+        return ts.strftime("%Y-%m-%d %H:%M:%S")
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _to_real_utc_naive(value) -> pd.Timestamp | None:
+    if value is None:
+        return None
+    ts = pd.to_datetime(value, errors="coerce")
+    if pd.notna(ts):
+        out = pd.Timestamp(ts)
+        # Affichage en heure réelle (UTC).
+        # Si naive, on considère qu'il provient de Europe/Paris puis on convertit en UTC.
+        if out.tzinfo is None:
+            out = out.tz_localize("Europe/Paris")
+        return out.tz_convert("UTC").tz_localize(None)
+    return None
+
+
 @st.dialog("📊 Features du match", width="large")
 def show_features_dialog(match_id, compet: str, match_label: str, id_match=None):
     match_id = _coerce_id(match_id)
@@ -158,56 +211,152 @@ def show_features_dialog(match_id, compet: str, match_label: str, id_match=None)
         cap += f" — ID_MATCH : `{id_match}`"
     st.caption(cap)
 
+    pred_lookup = id_match if id_match is not None else match_id
+    with st.spinner("Chargement des odds…"):
+        odds = load_match_odds(pred_lookup)
+
+    # Source de vérité: timestamp de la ligne odds du match (fallback table odds).
+    if odds is not None and not odds.empty:
+        odds_row = odds.iloc[0]
+        cols_lower = {str(col).lower(): col for col in odds_row.index}
+        maj_col = cols_lower.get("maj")
+        if maj_col is not None:
+            maj_text = _format_exact_ts(odds_row.get(maj_col))
+            if maj_text:
+                st.caption(f"maj : {maj_text}")
+            else:
+                _, odds_ts = _find_update_timestamp(odds_row)
+                formatted = _format_exact_ts(odds_ts)
+                if formatted:
+                    st.caption(f"maj : {formatted}")
+        else:
+            _, odds_ts = _find_update_timestamp(odds_row)
+            formatted = _format_exact_ts(odds_ts)
+            if formatted:
+                st.caption(f"maj : {formatted}")
+            else:
+                table_ts = load_odds_latest_maj_time()
+                formatted = _format_exact_ts(table_ts)
+                if formatted:
+                    st.caption(f"maj : {formatted}")
+    else:
+        table_ts = load_odds_latest_maj_time()
+        formatted = _format_exact_ts(table_ts)
+        if formatted:
+            st.caption(f"maj : {formatted}")
+
     if match_id is None:
         st.warning("Aucune clé disponible pour ce match.")
         return
 
     # ---- Prédictions ----------------------------------------------------
-    pred_lookup = id_match if id_match is not None else match_id
     with st.spinner("Chargement des prédictions…"):
         preds = load_match_predictions(pred_lookup)
     if preds is not None and not preds.empty:
         prow = preds.iloc[0]
         with st.expander("🔮 Prédictions", expanded=True):
-            _render_update_caption(prow, "Predictions")
-            _render_table_update_caption("predictions", "Predictions")
-            # Affiche en priorité quelques colonnes connues, puis le reste
-            preferred = [
-                "pred_w_used",
-                "pred_l_used",
-                "pred_w",
-                "pred_l",
-                "proba_w",
-                "proba_l",
-                "model_used",
-                "model",
-                "ID_MATCH",
-            ]
-            cols_lower = {c.lower(): c for c in prow.index}
-            ordered = []
-            for k in preferred:
-                if k.lower() in cols_lower:
-                    ordered.append(cols_lower[k.lower()])
-            for c in prow.index:
-                if c not in ordered:
-                    ordered.append(c)
-
-            def _fmt_pred(v):
-                try:
-                    return f"{float(v):.4g}"
-                except (TypeError, ValueError):
-                    return (
-                        "—"
-                        if v is None or (isinstance(v, float) and pd.isna(v))
-                        else str(v)
-                    )
-
-            df_pred = pd.DataFrame(
-                {"Champ": ordered, "Valeur": [_fmt_pred(prow[c]) for c in ordered]}
+            pred_pairs = _build_paired_table(
+                prow,
+                [
+                    ("pred_used", "pred_w_used", "pred_l_used"),
+                    ("pred", "pred_w", "pred_l"),
+                    ("proba", "proba_w", "proba_l"),
+                ],
             )
-            st.dataframe(df_pred, width="stretch", hide_index=True, height=260)
+            if pred_pairs.empty:
+
+                def _fmt_pred(v):
+                    try:
+                        return f"{float(v):.4g}"
+                    except (TypeError, ValueError):
+                        return (
+                            "—"
+                            if v is None or (isinstance(v, float) and pd.isna(v))
+                            else str(v)
+                        )
+
+                fallback = pd.DataFrame(
+                    {
+                        "Champ": list(prow.index),
+                        "Valeur": [_fmt_pred(prow[c]) for c in prow.index],
+                    }
+                )
+                st.dataframe(
+                    fallback,
+                    width="stretch",
+                    hide_index=True,
+                    height=_frame_height(len(fallback)),
+                )
+            else:
+                for c in ("Winner", "Loser"):
+                    pred_pairs[c] = pd.to_numeric(pred_pairs[c], errors="ignore")
+                st.dataframe(
+                    pred_pairs.style.format(
+                        {
+                            "Winner": "{:.4g}",
+                            "Loser": "{:.4g}",
+                        },
+                        na_rep="—",
+                    ),
+                    width="stretch",
+                    hide_index=True,
+                    height=_frame_height(len(pred_pairs)),
+                )
     else:
         st.caption("ℹ️ Aucune prédiction trouvée pour ce match.")
+
+    # ---- Odds -----------------------------------------------------------
+    if odds is not None and not odds.empty:
+        orow = odds.iloc[0]
+        with st.expander("💸 Odds", expanded=True):
+            odds_pairs = _build_paired_table(
+                orow,
+                [
+                    ("Avg", "AvgW", "AvgL"),
+                    ("Max", "MaxW", "MaxL"),
+                ],
+            )
+            if odds_pairs.empty:
+
+                def _fmt_odds(v):
+                    try:
+                        return f"{float(v):.4g}"
+                    except (TypeError, ValueError):
+                        return (
+                            "—"
+                            if v is None or (isinstance(v, float) and pd.isna(v))
+                            else str(v)
+                        )
+
+                fallback = pd.DataFrame(
+                    {
+                        "Champ": list(orow.index),
+                        "Valeur": [_fmt_odds(orow[c]) for c in orow.index],
+                    }
+                )
+                st.dataframe(
+                    fallback,
+                    width="stretch",
+                    hide_index=True,
+                    height=_frame_height(len(fallback)),
+                )
+            else:
+                for c in ("Winner", "Loser"):
+                    odds_pairs[c] = pd.to_numeric(odds_pairs[c], errors="ignore")
+                st.dataframe(
+                    odds_pairs.style.format(
+                        {
+                            "Winner": "{:.4g}",
+                            "Loser": "{:.4g}",
+                        },
+                        na_rep="—",
+                    ),
+                    width="stretch",
+                    hide_index=True,
+                    height=_frame_height(len(odds_pairs)),
+                )
+    else:
+        st.caption("ℹ️ Aucune ligne odds trouvée pour ce match.")
 
     # ---- Features --------------------------------------------------------
     with st.spinner("Chargement des features…"):
@@ -217,8 +366,6 @@ def show_features_dialog(match_id, compet: str, match_label: str, id_match=None)
         return
 
     row = feats.iloc[0]
-    _render_update_caption(row, "Features")
-    _render_table_update_caption(get_features_table_name(compet), "Features")
 
     # Pairing winner_/loser_
     paired = []

@@ -307,6 +307,7 @@ def prepare_bets_data(user_id: int, finished: bool = True):
             "is_ratio_odds",
             "ID_TENNET",
         ]
+        + (["odds_maj"] if "odds_maj" in bets_data.columns else [])
     ].copy()
     prepared_bets["compet"] = prepared_bets["compet"].str.title()
 
@@ -456,6 +457,11 @@ def prepare_bets_data(user_id: int, finished: bool = True):
                     "Prédiction": "mean",
                     "Gains net": "sum",
                     "Marge attendue": "sum",
+                    **(
+                        {"odds_maj": "first"}
+                        if "odds_maj" in valid_bets.columns
+                        else {}
+                    ),
                 }
             )
             .reset_index()
@@ -499,64 +505,70 @@ def load_inplay_bets(user_id: int):
 @st.cache_data(ttl=DATA_CACHE_TTL_INPLAY, show_spinner=False)
 def _load_inplay_bets_cached(user_id: int):
     query_bets = """SELECT b.*,
-                            tourney_name,
-                            tourney_level,
-                            winner_name,
-                            loser_name,
-                            round,
-                            surface,
-                            match_settled,
-                            tourney_date,
-                            pred_w_used as winner_pred,
-                            pred_l_used as loser_pred,
-                            is_ratio_odds_W,
-                            is_ratio_odds_L,
+                            m.tourney_name,
+                            m.tourney_level,
+                            m.winner_name,
+                            m.loser_name,
+                            m.round,
+                            m.surface,
+                            m.match_settled,
+                            m.tourney_date,
+                            p.pred_w_used as winner_pred,
+                            p.pred_l_used as loser_pred,
+                            p.is_ratio_odds_W,
+                            p.is_ratio_odds_L,
                             'doubles' = TRUE as doubles,
                             'atp' as compet,
-                            m.ID_TENNET
+                            m.ID_TENNET,
+                            o.maj as odds_maj
                                     FROM Bet b join men_matchs m on (b.ID_MATCH = m.ID_MATCH) 
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
-                                        WHERE not match_settled in (1,2)
+                                        left join odds o on (b.ID_MATCH = o.id)
+                                        WHERE not m.match_settled in (1,2)
                     UNION
                         SELECT b.*,
-                            tourney_name,
-                            tourney_level,
-                            winner_name,
-                            loser_name,
-                            round,
-                            surface,
-                            match_settled,
-                            tourney_date,
-                            pred_w_used as winner_pred,
-                            pred_l_used as loser_pred,
-                            is_ratio_odds_W,
-                            is_ratio_odds_L,
+                            m.tourney_name,
+                            m.tourney_level,
+                            m.winner_name,
+                            m.loser_name,
+                            m.round,
+                            m.surface,
+                            m.match_settled,
+                            m.tourney_date,
+                            p.pred_w_used as winner_pred,
+                            p.pred_l_used as loser_pred,
+                            p.is_ratio_odds_W,
+                            p.is_ratio_odds_L,
                             'doubles' = TRUE as doubles,
                             'wta' as compet,
-                            m.ID_TENNET
+                            m.ID_TENNET,
+                            o.maj as odds_maj
                                     FROM  Bet b join women_matchs m on (b.ID_MATCH = m.ID_MATCH)
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
-                                        WHERE  not match_settled in (1,2)
+                                        left join odds o on (b.ID_MATCH = o.id)
+                                        WHERE  not m.match_settled in (1,2)
                     UNION
                         SELECT b.*, 
-                                tourney_name,
-                                tourney_level,
-                                concat(winner_name1,'/',winner_name2) as winner_name,
-                                concat(loser_name1,'/',loser_name2)  as loser_name,
-                                round,
-                                surface,
-                                match_settled, 
-                                tourney_date, 
-                                pred_w_used as winner_pred,
-                                pred_l_used as loser_pred,
-                                is_ratio_odds_W,
-                                is_ratio_odds_L,
+                                m.tourney_name,
+                                m.tourney_level,
+                                concat(m.winner_name1,'/',m.winner_name2) as winner_name,
+                                concat(m.loser_name1,'/',m.loser_name2)  as loser_name,
+                                m.round,
+                                m.surface,
+                                m.match_settled, 
+                                m.tourney_date, 
+                                p.pred_w_used as winner_pred,
+                                p.pred_l_used as loser_pred,
+                                p.is_ratio_odds_W,
+                                p.is_ratio_odds_L,
                                 'doubles' = FALSE as doubles  ,
                                 'doubles' as compet,
-                                NULL as ID_TENNET
+                                NULL as ID_TENNET,
+                                o.maj as odds_maj
                                     FROM Bet b join double_matchs m  on (b.ID_MATCH = m.ID_MATCH) 
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
-                                        WHERE not match_settled in (1,2)"""
+                                        left join odds o on (b.ID_MATCH = o.id)
+                                        WHERE not m.match_settled in (1,2)"""
     bets_data = read_sql_query(BDD, query_bets)
     bets_data = bets_data[(bets_data["ID_USER"] == user_id)]
     bets_data.sort_values(by="tourney_date", ascending=True, inplace=True)
@@ -611,6 +623,41 @@ def load_table_update_time(table_name: str):
 
     timestamp = pd.to_datetime(df["updated_at"].iloc[0], errors="coerce")
     return None if pd.isna(timestamp) else timestamp
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_odds_latest_maj_time():
+    """Retourne la date de maj la plus recente issue des donnees odds.
+
+    Priorite: MAX(maj), puis d'autres colonnes communes si `maj` n'existe pas.
+    Fallback final: UPDATE_TIME/CREATE_TIME de la table.
+    """
+    candidate_cols = (
+        "maj",
+        "date_maj",
+        "updated_at",
+        "update_at",
+        "last_update",
+        "last_updated",
+        "timestamp",
+        "ts",
+    )
+
+    for col in candidate_cols:
+        query = f"SELECT MAX({col}) AS updated_at FROM odds"
+        try:
+            df = read_sql_query(BDD, query)
+        except Exception:
+            continue
+
+        if df is None or df.empty or "updated_at" not in df.columns:
+            continue
+
+        timestamp = pd.to_datetime(df["updated_at"].iloc[0], errors="coerce")
+        if pd.notna(timestamp):
+            return timestamp
+
+    return load_table_update_time("odds")
 
 
 def load_match_features(match_id, compet: str):
@@ -669,70 +716,96 @@ def load_match_predictions(id_match):
         return None
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def load_match_odds(id_match):
+    """
+    Charge la ligne de la table `odds` pour un ID_MATCH donné.
+    Retourne un DataFrame (en général 1 ligne) ou None.
+    """
+    if (
+        id_match is None
+        or str(id_match).strip() == ""
+        or str(id_match).lower() == "nan"
+    ):
+        return None
+    try:
+        return read_sql_query(
+            BDD,
+            "SELECT * FROM odds WHERE id = :id_match",
+            params={"id_match": str(id_match)},
+        )
+    except Exception:
+        logger.exception("load_match_odds: failed for ID_MATCH=%s", id_match)
+        return None
+
+
 @st.cache_data(ttl=DATA_CACHE_TTL_FUTURE, show_spinner=False)
 def _load_future_matchs_cached():
-    query_matchs = """SELECT  tourney_name,
-                            tourney_level,
+    query_matchs = """SELECT  m.tourney_name,
+                            m.tourney_level,
                             m.winner_name,
                             m.loser_name,
-                            round,
-                            surface,
-                            tourney_date,
-                            pred_w_used as winner_pred,
-                            pred_l_used as loser_pred,
+                            m.round,
+                            m.surface,
+                            m.tourney_date,
+                            p.pred_w_used as winner_pred,
+                            p.pred_l_used as loser_pred,
                             'doubles' = TRUE as doubles,
                             'atp' as compet,
                              o.liens as odds_lien,
-                             MaxW as max_odds1,
-                             MaxL as max_odds2,
+                             o.MaxW as max_odds1,
+                             o.MaxL as max_odds2,
                              m.ID_MATCH,
-                             m.ID_TENNET
+                             m.ID_TENNET,
+                             o.maj as odds_maj
                                     FROM men_matchs m 
                                     right join odds o on (m.ID_MATCH = o.id)
                                     right join predictions p on (m.ID_MATCH = p.ID_MATCH)
-                                        WHERE match_settled = 0
+                                        WHERE m.match_settled = 0
                     UNION
-                        SELECT tourney_name,
-                            tourney_level,
+                        SELECT m.tourney_name,
+                            m.tourney_level,
                             m.winner_name,
                             m.loser_name,
-                            round,
-                            surface,
-                            tourney_date,
-                            pred_w_used as winner_pred,
-                            pred_l_used as loser_pred,
+                            m.round,
+                            m.surface,
+                            m.tourney_date,
+                            p.pred_w_used as winner_pred,
+                            p.pred_l_used as loser_pred,
                             'doubles' = TRUE as doubles,
                             'wta' as compet,
                              o.liens as odds_lien,
-                             MaxW as max_odds1,
-                             MaxL as max_odds2,
+                             o.MaxW as max_odds1,
+                             o.MaxL as max_odds2,
                              m.ID_MATCH,
-                             m.ID_TENNET
+                             m.ID_TENNET,
+                             o.maj as odds_maj
                                     FROM women_matchs m 
                                     right join odds o on (m.ID_MATCH = o.id)
                                     right join predictions p on (m.ID_MATCH = p.ID_MATCH)
-                                        WHERE match_settled = 0
+                                        WHERE m.match_settled = 0
                     UNION
-                        SELECT  tourney_name,
-                                tourney_level,
-                                concat(winner_name1,'/',winner_name2) as winner_name,
-                                concat(loser_name1,'/',loser_name2)  as loser_name,
-                                round,
-                                surface,
-                                tourney_date, 
-                                pred_w_used as winner_pred,
-                                pred_l_used as loser_pred,
+                        SELECT  m.tourney_name,
+                                m.tourney_level,
+                                concat(m.winner_name1,'/',m.winner_name2) as winner_name,
+                                concat(m.loser_name1,'/',m.loser_name2)  as loser_name,
+                                m.round,
+                                m.surface,
+                                m.tourney_date, 
+                                p.pred_w_used as winner_pred,
+                                p.pred_l_used as loser_pred,
                                 'doubles' = FALSE as doubles,
                                 'doubles' as compet,
                                 o.liens as odds_lien,
-                                MaxW as max_odds1,
-                                MaxL as max_odds2,
+                                o.MaxW as max_odds1,
+                                o.MaxL as max_odds2,
                              m.ID_MATCH,
-                             NULL as ID_TENNET
+                             NULL as ID_TENNET,
+                             o.maj as odds_maj
                                     FROM double_matchs m
                                     right join odds o on (m.ID_MATCH = o.id)
                                     right join predictions p on (m.ID_MATCH = p.ID_MATCH)
-                                        WHERE match_settled = 0"""
+                                        WHERE m.match_settled = 0"""
     matchs_data = read_sql_query(BDD, query_matchs)
     matchs_data.sort_values(by="tourney_date", ascending=True, inplace=True)
     matchs_data.reset_index(drop=True, inplace=True)
