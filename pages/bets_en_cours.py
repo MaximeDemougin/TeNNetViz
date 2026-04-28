@@ -279,7 +279,9 @@ if st.session_state.get("logged_in", False):
 
         # Tri par date de match croissante (les matchs les plus proches en premier)
         try:
-            _sort_col = "tourney_date" if "tourney_date" in bets_data.columns else "Date"
+            _sort_col = (
+                "tourney_date" if "tourney_date" in bets_data.columns else "Date"
+            )
             bets_data["_sort_dt"] = pd.to_datetime(
                 bets_data[_sort_col], errors="coerce"
             )
