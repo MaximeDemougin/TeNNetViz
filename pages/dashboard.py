@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from data import prepare_bets_data
+from utils import now_paris
 from pages.components.metrics import render_metrics
 from pages.components.charts import (
     render_cumulative_chart,
@@ -62,6 +63,20 @@ chartOptions = {
 }
 
 st.title("🏆 Les résultats TeNNet", text_alignment="center")
+
+# Bouton de rafraîchissement dans la sidebar
+with st.sidebar:
+    if st.button(
+        "Rafraîchir les données",
+        use_container_width=True,
+        key="refresh_dashboard",
+    ):
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
+        st.rerun()
+    st.caption(f"Dernière mise à jour : {now_paris().strftime('%H:%M:%S')}")
 
 
 def _empty_bets_df() -> pd.DataFrame:

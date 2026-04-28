@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 from data import prepare_bets_data
-from utils import fmt_eur
+from utils import fmt_eur, now_paris
 from pages.components.features_dialog import (
     _format_exact_ts,
     get_features_key,
@@ -67,19 +66,19 @@ st.markdown(
 
 st.title("Paris en cours", text_alignment="center")
 
-_refresh_col1, _refresh_col2 = st.columns([1, 5])
-with _refresh_col1:
-    if st.button("🔄 Rafraîchir", use_container_width=True):
+# Bouton de rafraîchissement dans la sidebar
+with st.sidebar:
+    if st.button(
+        "Rafraîchir les données",
+        use_container_width=True,
+        key="refresh_bets_en_cours",
+    ):
         try:
             st.cache_data.clear()
         except Exception:
             pass
         st.rerun()
-with _refresh_col2:
-    st.caption(
-        f"Auto-refresh toutes les {REFRESH_INTERVAL_MS // 1000}s — "
-        f"dernière mise à jour : {datetime.now().strftime('%H:%M:%S')}"
-    )
+    st.caption(f"Dernière mise à jour : {now_paris().strftime('%H:%M:%S')}")
 
 
 def display_bet_cards(bets_df, cols_per_row=3):

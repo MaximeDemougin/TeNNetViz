@@ -144,7 +144,4 @@ if st.session_state.logged_in:
 else:
     pg = st.navigation([login_page])
 
-# call helper to insert the logo at the bottom center of the sidebar
-# _sidebar_logo_bottom_center()
-
 pg.run()

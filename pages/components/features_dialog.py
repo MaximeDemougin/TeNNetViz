@@ -152,10 +152,16 @@ def _frame_height(n_rows: int, min_height: int = 90, max_height: int = 360) -> i
 
 
 def _format_exact_ts(value) -> str | None:
-    ts = _to_real_utc_naive(value)
-    if ts is not None:
-        return ts.strftime("%Y-%m-%d %H:%M:%S")
-    text = str(value).strip() if value is not None else ""
+    # Affichage tel quel (pas de conversion de fuseau) — la valeur vient de la BDD.
+    if value is None:
+        return None
+    ts = pd.to_datetime(value, errors="coerce")
+    if pd.notna(ts):
+        out = pd.Timestamp(ts)
+        if out.tzinfo is not None:
+            out = out.tz_localize(None)
+        return out.strftime("%Y-%m-%d %H:%M:%S")
+    text = str(value).strip()
     return text or None
 
 

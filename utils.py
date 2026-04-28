@@ -1,5 +1,42 @@
 import base64
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+import pandas as pd
 import streamlit as st
+
+
+PARIS_TZ = ZoneInfo("Europe/Paris")
+
+
+def now_paris() -> datetime:
+    """Return current datetime in Europe/Paris timezone (naive)."""
+    return datetime.now(PARIS_TZ).replace(tzinfo=None)
+
+
+def to_paris(series_or_ts):
+    """Convert a pandas Series/Timestamp from UTC to Europe/Paris.
+
+    Naive inputs are assumed to be UTC. Returns a tz-naive value in Paris time
+    so that downstream `.dt.strftime` keeps working unchanged.
+    """
+    if isinstance(series_or_ts, pd.Series):
+        s = pd.to_datetime(series_or_ts, errors="coerce")
+        try:
+            if s.dt.tz is None:
+                s = s.dt.tz_localize("UTC")
+            return s.dt.tz_convert(PARIS_TZ).dt.tz_localize(None)
+        except Exception:
+            return s
+    ts = pd.to_datetime(series_or_ts, errors="coerce")
+    if ts is pd.NaT or pd.isna(ts):
+        return ts
+    try:
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        return ts.tz_convert(PARIS_TZ).tz_localize(None)
+    except Exception:
+        return ts
 
 
 def fmt_num(value, decimals: int = 0, sign: bool = False) -> str:
