@@ -45,11 +45,27 @@ logger.setLevel(logging.INFO)
 logging.basicConfig(format="%(asctime)s-%(levelname)s: %(message)s")
 
 
+@st.cache_resource(show_spinner=False)
+def _get_engine(schema: str):
+    """Return a process-wide pooled SQLAlchemy engine for the given schema.
+
+    Uses st.cache_resource so the engine (and its connection pool) is
+    instantiated once per Streamlit process per schema, instead of
+    rebuilt on every query.
+    """
+    return create_engine(
+        f"{DB_URL}{schema}",
+        pool_size=5,
+        max_overflow=10,
+        pool_recycle=1800,
+        pool_pre_ping=True,
+    )
+
+
 def read_table(schema: str, table_name: str) -> pd.DataFrame:
     logger.info(f"Reading table {table_name} from schema {schema}")
-    connection = create_engine(f"{DB_URL}{schema}")
-    df = pd.read_sql_table(table_name, con=connection)
-    connection.dispose()
+    engine = _get_engine(schema)
+    df = pd.read_sql_table(table_name, con=engine)
     logger.info(f"Table read successfully, shape: {df.shape}")
     return df
 
@@ -62,39 +78,36 @@ def read_sql_query(schema: str, query: str, params: dict | None = None) -> pd.Da
     with literal SELECT queries that contain no user input.
     """
     logger.info(f"Reading table from schema {schema} with query: {query}")
-    connection = create_engine(f"{DB_URL}{schema}")
+    engine = _get_engine(schema)
     if params is not None:
-        df = pd.read_sql_query(text(query), con=connection, params=params)
+        df = pd.read_sql_query(text(query), con=engine, params=params)
     else:
-        df = pd.read_sql_query(query, con=connection)
-    connection.dispose()
+        df = pd.read_sql_query(query, con=engine)
     logger.info(f"Table read successfully, shape: {df.shape}")
     return df
 
 
 def read_multiple_tables(schema: str, table_names: list) -> dict:
     logger.info(f"Reading tables {table_names} from schema {schema}")
-    connection = create_engine(f"{DB_URL}{schema}")
+    engine = _get_engine(schema)
     tables = {}
     for table_name in table_names:
-        tables[table_name] = pd.read_sql_table(table_name, con=connection)
+        tables[table_name] = pd.read_sql_table(table_name, con=engine)
         logger.info(
             f"Table {table_name} read successfully, shape: {tables[table_name].shape}"
         )
-    connection.dispose()
     return tables
 
 
 def read_multiple_sql_queries(schema: str, queries: dict) -> dict:
     logger.info(f"Reading tables {queries.keys()} from schema {schema}")
-    connection = create_engine(f"{DB_URL}{schema}")
+    engine = _get_engine(schema)
     tables = {}
     for table_name, query in queries.items():
-        tables[table_name] = pd.read_sql_query(query, con=connection)
+        tables[table_name] = pd.read_sql_query(query, con=engine)
         logger.info(
             f"Table {table_name} read successfully, shape: {tables[table_name].shape}"
         )
-    connection.dispose()
     return tables
 
 

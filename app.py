@@ -90,6 +90,11 @@ streaks_page = st.Page(
     title="Streaks & Volatilité",
     icon=":material/local_fire_department:",
 )
+orbitx_coverage_page = st.Page(
+    "pages/orbitx_coverage.py",
+    title="Couverture Orbitx",
+    icon=":material/satellite_alt:",
+)
 
 if st.session_state.logged_in:
     # compute in-play count to show next to the menu label, but cache it with a short TTL
@@ -131,6 +136,7 @@ if st.session_state.logged_in:
                 bankroll_page,
                 players_page,
                 streaks_page,
+                orbitx_coverage_page,
                 data_explorer_page,
             ],
         }

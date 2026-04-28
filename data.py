@@ -104,15 +104,19 @@ def load_bankroll(user_id: int):
     """
     Loads the bankroll for a given user from the database.
     """
-    # Parameterized query to prevent SQL injection
     user_id = int(user_id) if user_id is not None else 0
+    bankroll = _load_bankroll_cached(user_id)
+    st.session_state["bankroll"] = bankroll
+    return bankroll
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL_FINISHED, show_spinner=False)
+def _load_bankroll_cached(user_id: int) -> int:
     query_bankroll = "SELECT bankroll FROM FootNet.Users WHERE ID_USER = :user_id"
     bankroll_data = read_sql_query(BDD, query_bankroll, params={"user_id": user_id})
     if not bankroll_data.empty:
-        st.session_state["bankroll"] = int(bankroll_data["bankroll"].values[0])
-    else:
-        st.session_state["bankroll"] = 0
-    return st.session_state["bankroll"]
+        return int(bankroll_data["bankroll"].values[0])
+    return 0
 
 
 def load_bets(user_id: int):
@@ -143,7 +147,7 @@ def _load_bets_cached(user_id: int):
                             m.ID_TENNET
                                     FROM Bet b join men_matchs m on (b.ID_MATCH = m.ID_MATCH) 
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
-                                        WHERE match_settled in (1,2) and score != 'W/O' and status = 1
+                                        WHERE match_settled in (1,2) and score != 'W/O' and status = 1 and b.ID_USER = :user_id
                     UNION
                         SELECT b.*,
                             tourney_name,
@@ -164,7 +168,7 @@ def _load_bets_cached(user_id: int):
                             m.ID_TENNET
                                     FROM  Bet b join women_matchs m on (b.ID_MATCH = m.ID_MATCH)
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
-                                        WHERE  match_settled in (1,2) and score != 'W/O' and status = 1
+                                        WHERE  match_settled in (1,2) and score != 'W/O' and status = 1 and b.ID_USER = :user_id
                     UNION
                         SELECT b.*, 
                                 tourney_name,
@@ -185,9 +189,8 @@ def _load_bets_cached(user_id: int):
                                 NULL as ID_TENNET
                                     FROM Bet b join double_matchs m  on (b.ID_MATCH = m.ID_MATCH) 
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
-                                        WHERE match_settled in (1,2) and score != 'W/O' and status = 1"""
-    bets_data = read_sql_query(BDD, query_bets)
-    bets_data = bets_data[bets_data["ID_USER"] == user_id]
+                                        WHERE match_settled in (1,2) and score != 'W/O' and status = 1 and b.ID_USER = :user_id"""
+    bets_data = read_sql_query(BDD, query_bets, params={"user_id": user_id})
     bets_data.sort_values(by="tourney_date", ascending=True, inplace=True)
     bets_data.reset_index(drop=True, inplace=True)
     return bets_data
@@ -197,6 +200,13 @@ def prepare_bets_data(user_id: int, finished: bool = True):
     """
     Groups bets_data by player beted and calculates total amount beted and won/lost.
     """
+    return _prepare_bets_data_cached(
+        int(user_id) if user_id is not None else 0, bool(finished)
+    )
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL_INPLAY, show_spinner=False)
+def _prepare_bets_data_cached(user_id: int, finished: bool):
 
     if finished:
         bets_data = load_bets(user_id)
@@ -524,7 +534,7 @@ def _load_inplay_bets_cached(user_id: int):
                                     FROM Bet b join men_matchs m on (b.ID_MATCH = m.ID_MATCH) 
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         left join odds o on (b.ID_MATCH = o.id)
-                                        WHERE not m.match_settled in (1,2)
+                                        WHERE not m.match_settled in (1,2) and b.ID_USER = :user_id
                     UNION
                         SELECT b.*,
                             m.tourney_name,
@@ -546,7 +556,7 @@ def _load_inplay_bets_cached(user_id: int):
                                     FROM  Bet b join women_matchs m on (b.ID_MATCH = m.ID_MATCH)
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         left join odds o on (b.ID_MATCH = o.id)
-                                        WHERE  not m.match_settled in (1,2)
+                                        WHERE  not m.match_settled in (1,2) and b.ID_USER = :user_id
                     UNION
                         SELECT b.*, 
                                 m.tourney_name,
@@ -568,9 +578,8 @@ def _load_inplay_bets_cached(user_id: int):
                                     FROM Bet b join double_matchs m  on (b.ID_MATCH = m.ID_MATCH) 
                                         right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         left join odds o on (b.ID_MATCH = o.id)
-                                        WHERE not m.match_settled in (1,2)"""
-    bets_data = read_sql_query(BDD, query_bets)
-    bets_data = bets_data[(bets_data["ID_USER"] == user_id)]
+                                        WHERE not m.match_settled in (1,2) and b.ID_USER = :user_id"""
+    bets_data = read_sql_query(BDD, query_bets, params={"user_id": user_id})
     bets_data.sort_values(by="tourney_date", ascending=True, inplace=True)
     bets_data.reset_index(drop=True, inplace=True)
     return bets_data
@@ -581,6 +590,114 @@ def load_future_matchs():
     Loads the future matchs from the database.
     """
     return _load_future_matchs_cached()
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL_INPLAY, show_spinner=False)
+def load_future_matchs_missing_betfair(within_minutes: int = 60):
+    """Future matches starting in the next ``within_minutes`` not present in
+    ``betfair_links`` (joined on ``ID_MATCH``).
+
+    Covers ATP, WTA and doubles. Returns a DataFrame; empty if none.
+    """
+    minutes = max(int(within_minutes), 0)
+    query = """
+        SELECT 'atp' AS compet,
+               m.ID_MATCH, m.tourney_name, m.tourney_level, m.round,
+               m.surface, m.tourney_date, m.winner_name, m.loser_name
+        FROM men_matchs m
+        LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
+        WHERE m.match_settled = 0
+          AND m.tourney_date BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL :minutes MINUTE)
+          AND bl.ID_MATCH IS NULL
+        UNION ALL
+        SELECT 'wta' AS compet,
+               m.ID_MATCH, m.tourney_name, m.tourney_level, m.round,
+               m.surface, m.tourney_date, m.winner_name, m.loser_name
+        FROM women_matchs m
+        LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
+        WHERE m.match_settled = 0
+          AND m.tourney_date BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL :minutes MINUTE)
+          AND bl.ID_MATCH IS NULL
+        UNION ALL
+        SELECT 'doubles' AS compet,
+               m.ID_MATCH, m.tourney_name, m.tourney_level, m.round,
+               m.surface, m.tourney_date,
+               CONCAT(m.winner_name1, '/', m.winner_name2) AS winner_name,
+               CONCAT(m.loser_name1, '/', m.loser_name2) AS loser_name
+        FROM double_matchs m
+        LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
+        WHERE m.match_settled = 0
+          AND m.tourney_date BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL :minutes MINUTE)
+          AND bl.ID_MATCH IS NULL
+    """
+    try:
+        df = read_sql_query(BDD, query, params={"minutes": minutes})
+    except Exception:
+        logger.exception("load_future_matchs_missing_betfair: failed")
+        return pd.DataFrame()
+
+    if df is None or df.empty:
+        return pd.DataFrame()
+    df["tourney_date"] = pd.to_datetime(df["tourney_date"], errors="coerce")
+    df = df.sort_values("tourney_date").reset_index(drop=True)
+    return df
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL_FUTURE, show_spinner=False)
+def load_players_betfair_coverage(year: int = 2026):
+    """For every singles player (ATP + WTA) appearing in matches of ``year``,
+    return total matches vs matches found in ``betfair_links`` (joined on
+    ``ID_MATCH``).
+
+    Doubles are intentionally excluded (4 players per match, less actionable).
+    """
+    year = int(year)
+    query = """
+        SELECT compet, player,
+               COUNT(*) AS total_matches,
+               SUM(CASE WHEN bl_id IS NOT NULL THEN 1 ELSE 0 END) AS found_matches,
+               SUM(CASE WHEN bl_id IS NULL THEN 1 ELSE 0 END) AS missing_matches
+        FROM (
+            SELECT 'atp' AS compet, m.winner_name AS player, m.ID_MATCH AS mid, bl.ID_MATCH AS bl_id
+            FROM men_matchs m
+            LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
+            WHERE YEAR(m.tourney_date) = :year
+            UNION ALL
+            SELECT 'atp', m.loser_name, m.ID_MATCH, bl.ID_MATCH
+            FROM men_matchs m
+            LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
+            WHERE YEAR(m.tourney_date) = :year
+            UNION ALL
+            SELECT 'wta', m.winner_name, m.ID_MATCH, bl.ID_MATCH
+            FROM women_matchs m
+            LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
+            WHERE YEAR(m.tourney_date) = :year
+            UNION ALL
+            SELECT 'wta', m.loser_name, m.ID_MATCH, bl.ID_MATCH
+            FROM women_matchs m
+            LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
+            WHERE YEAR(m.tourney_date) = :year
+        ) p
+        WHERE player IS NOT NULL AND player <> ''
+        GROUP BY compet, player
+    """
+    try:
+        df = read_sql_query(BDD, query, params={"year": year})
+    except Exception:
+        logger.exception("load_players_betfair_coverage: failed")
+        return pd.DataFrame()
+
+    if df is None or df.empty:
+        return pd.DataFrame()
+    for col in ("total_matches", "found_matches", "missing_matches"):
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+    df["coverage_pct"] = np.where(
+        df["total_matches"] > 0, df["found_matches"] / df["total_matches"] * 100, 0.0
+    ).round(1)
+    df["compet"] = df["compet"].astype(str).str.upper()
+    return df.sort_values(
+        ["found_matches", "total_matches"], ascending=[True, False]
+    ).reset_index(drop=True)
 
 
 _FEATURES_TABLE_BY_COMPET = {
@@ -602,20 +719,12 @@ def get_features_table_name(compet: str) -> str | None:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def load_table_update_time(table_name: str):
-    if table_name is None or not str(table_name).strip():
-        return None
-
-    query = """
-        SELECT COALESCE(UPDATE_TIME, CREATE_TIME) AS updated_at
-        FROM information_schema.tables
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = :table_name
-    """
+def load_odds_latest_maj_time():
+    """Retourne MAX(odds.maj) le plus recent (timestamp ou None)."""
     try:
-        df = read_sql_query(BDD, query, params={"table_name": str(table_name)})
+        df = read_sql_query(BDD, "SELECT MAX(maj) AS updated_at FROM odds")
     except Exception:
-        logger.exception("load_table_update_time: failed for table=%s", table_name)
+        logger.exception("load_odds_latest_maj_time: failed")
         return None
 
     if df is None or df.empty or "updated_at" not in df.columns:
@@ -623,41 +732,6 @@ def load_table_update_time(table_name: str):
 
     timestamp = pd.to_datetime(df["updated_at"].iloc[0], errors="coerce")
     return None if pd.isna(timestamp) else timestamp
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def load_odds_latest_maj_time():
-    """Retourne la date de maj la plus recente issue des donnees odds.
-
-    Priorite: MAX(maj), puis d'autres colonnes communes si `maj` n'existe pas.
-    Fallback final: UPDATE_TIME/CREATE_TIME de la table.
-    """
-    candidate_cols = (
-        "maj",
-        "date_maj",
-        "updated_at",
-        "update_at",
-        "last_update",
-        "last_updated",
-        "timestamp",
-        "ts",
-    )
-
-    for col in candidate_cols:
-        query = f"SELECT MAX({col}) AS updated_at FROM odds"
-        try:
-            df = read_sql_query(BDD, query)
-        except Exception:
-            continue
-
-        if df is None or df.empty or "updated_at" not in df.columns:
-            continue
-
-        timestamp = pd.to_datetime(df["updated_at"].iloc[0], errors="coerce")
-        if pd.notna(timestamp):
-            return timestamp
-
-    return load_table_update_time("odds")
 
 
 def load_match_features(match_id, compet: str):

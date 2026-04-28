@@ -5,7 +5,6 @@ from utils import fmt_eur
 from pages.components.features_dialog import (
     _format_exact_ts,
     get_features_key,
-    get_tables_update_text,
     show_features_dialog,
 )
 
@@ -55,7 +54,7 @@ st.markdown(
 st.title("Paris en cours", text_alignment="center")
 
 
-def display_bet_cards(bets_df, cols_per_row=3, base_update_text: str | None = None):
+def display_bet_cards(bets_df, cols_per_row=3):
     """Display bet cards in a grid layout"""
     if bets_df.empty:
         st.info("Aucun pari dans cette catégorie.")
@@ -89,12 +88,6 @@ def display_bet_cards(bets_df, cols_per_row=3, base_update_text: str | None = No
                         "<div style='margin-top: 12px; text-align: center; "
                         "font-size: 12px; color: #9ca3af; opacity: 0.8;'>"
                         f"🕒 Maj odds : {_bet_maj}</div>"
-                    )
-                elif base_update_text:
-                    base_update_html = (
-                        "<div style='margin-top: 12px; text-align: center; "
-                        "font-size: 12px; color: #9ca3af; opacity: 0.8;'>"
-                        f"🕒 {base_update_text}</div>"
                     )
 
                 # Create card HTML with hover effects and clickable link
@@ -242,9 +235,6 @@ def display_bet_cards(bets_df, cols_per_row=3, base_update_text: str | None = No
 
 if st.session_state.get("logged_in", False):
     bets_data = prepare_bets_data(st.session_state["ID_USER"], finished=False)
-    base_update_text = get_tables_update_text(
-        ["Bet", "predictions", "men_matchs", "women_matchs", "double_matchs"]
-    )
 
     if not bets_data.empty:
         # Calculate potential gains for all bets
@@ -772,7 +762,7 @@ if st.session_state.get("logged_in", False):
         st.markdown('<div id="atp-section"></div>', unsafe_allow_html=True)
         st.markdown("## 🎾 ATP")
         if not atp_bets.empty:
-            display_bet_cards(atp_bets, base_update_text=base_update_text)
+            display_bet_cards(atp_bets)
         else:
             st.markdown(
                 """
@@ -798,7 +788,7 @@ if st.session_state.get("logged_in", False):
         st.markdown('<div id="wta-section"></div>', unsafe_allow_html=True)
         st.markdown("## 👩‍🦰 WTA")
         if not wta_bets.empty:
-            display_bet_cards(wta_bets, base_update_text=base_update_text)
+            display_bet_cards(wta_bets)
         else:
             st.markdown(
                 """
@@ -824,7 +814,7 @@ if st.session_state.get("logged_in", False):
         st.markdown('<div id="doubles-section"></div>', unsafe_allow_html=True)
         st.markdown("## 🤝 Doubles")
         if not doubles_bets.empty:
-            display_bet_cards(doubles_bets, base_update_text=base_update_text)
+            display_bet_cards(doubles_bets)
         else:
             st.markdown(
                 """

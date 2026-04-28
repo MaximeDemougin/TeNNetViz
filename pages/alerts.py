@@ -10,7 +10,12 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from data import load_future_matchs, load_inplay_bets, prepare_bets_data
+from data import (
+    load_future_matchs,
+    load_future_matchs_missing_betfair,
+    load_inplay_bets,
+    prepare_bets_data,
+)
 from utils import fmt_eur, fmt_num
 from config import (
     ALERT_AVG_COTE_MAX,
@@ -401,6 +406,51 @@ else:
             "Heures depuis match"
         ].round(1)
         st.dataframe(overdue_display, width="stretch", hide_index=True)
+
+
+# ---------------------------------------------------------------------------
+# Matchs imminents non liés à Betfair
+# ---------------------------------------------------------------------------
+st.divider()
+st.markdown("### 🔗 Matchs dans l'heure absents de `betfair_links`")
+
+try:
+    missing_bf = load_future_matchs_missing_betfair(within_minutes=60)
+except Exception:
+    missing_bf = pd.DataFrame()
+
+if missing_bf is None or missing_bf.empty:
+    st.success("Tous les matchs prévus dans l'heure sont liés à Betfair.")
+else:
+    display_bf = missing_bf.copy()
+    display_bf["compet"] = display_bf["compet"].astype(str).str.upper()
+    display_bf["Match"] = (
+        display_bf["winner_name"].astype(str)
+        + " - "
+        + display_bf["loser_name"].astype(str)
+    )
+    display_bf["Date"] = pd.to_datetime(
+        display_bf["tourney_date"], errors="coerce"
+    ).dt.strftime("%d/%m/%Y %H:%M")
+    cols = [
+        "Date",
+        "compet",
+        "tourney_name",
+        "round",
+        "surface",
+        "Match",
+        "ID_MATCH",
+    ]
+    display_bf = display_bf[[c for c in cols if c in display_bf.columns]].rename(
+        columns={
+            "compet": "Compet",
+            "tourney_name": "Tournoi",
+            "round": "Round",
+            "surface": "Surface",
+        }
+    )
+    st.dataframe(display_bf, width="stretch", hide_index=True)
+    st.caption(f"{len(missing_bf)} match(s) sans lien Betfair dans la prochaine heure.")
 
 
 # ---------------------------------------------------------------------------

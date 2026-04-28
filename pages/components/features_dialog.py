@@ -8,7 +8,6 @@ from data import (
     load_match_odds,
     load_match_predictions,
     load_odds_latest_maj_time,
-    load_table_update_time,
 )
 from utils import csv_download_button
 
@@ -98,10 +97,10 @@ def _render_table_update_caption(table_name: str | None, label: str):
     if not table_name:
         return
 
-    if str(table_name).strip().lower() == "odds":
-        timestamp = load_odds_latest_maj_time()
-    else:
-        timestamp = load_table_update_time(table_name)
+    if str(table_name).strip().lower() != "odds":
+        return
+
+    timestamp = load_odds_latest_maj_time()
     if timestamp is None:
         return
 
@@ -113,33 +112,6 @@ def _render_table_update_caption(table_name: str | None, label: str):
     formatted_date = ts.strftime("%d/%m/%Y %H:%M")
     suffix = f" · il y a {elapsed}" if elapsed is not None else ""
     st.caption(f"{label} mis a jour le {formatted_date}{suffix} (table {table_name})")
-
-
-def get_tables_update_text(table_names, label: str = "Maj base") -> str | None:
-    timestamps = []
-    for table_name in dict.fromkeys(table_names):
-        if not table_name:
-            continue
-        if str(table_name).strip().lower() == "odds":
-            timestamp = load_odds_latest_maj_time()
-        else:
-            timestamp = load_table_update_time(table_name)
-        if timestamp is None:
-            continue
-        ts = _to_real_utc_naive(timestamp)
-        if ts is not None:
-            timestamps.append(ts)
-
-    if not timestamps:
-        return None
-
-    latest = max(timestamps)
-    elapsed = _format_elapsed_hm(latest)
-    formatted_date = latest.strftime("%d/%m/%Y %H:%M")
-    if elapsed is None:
-        return f"{label} {formatted_date}"
-
-    return f"{label} {formatted_date} · {elapsed}"
 
 
 def get_features_key(row, compet: str | None = None):
