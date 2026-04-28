@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from data import prepare_bets_data
 from utils import fmt_eur
 from pages.components.features_dialog import (
@@ -8,9 +9,22 @@ from pages.components.features_dialog import (
     show_features_dialog,
 )
 
+try:
+    from streamlit_autorefresh import st_autorefresh
+except Exception:  # fallback si la dépendance n'est pas installée
+    st_autorefresh = None
+
 st.set_page_config(
     layout="wide", page_icon="logo_TeNNet.png", page_title="Paris en cours"
 )
+
+# --- Auto-refresh des données ---
+# Rafraîchit la page automatiquement toutes les 60 secondes pour mettre à
+# jour les paris en cours (cotes, marges, scores). Le cache des fonctions
+# de données a déjà un TTL court côté `data.py` (DATA_CACHE_TTL_INPLAY).
+REFRESH_INTERVAL_MS = 60_000
+if st_autorefresh is not None:
+    st_autorefresh(interval=REFRESH_INTERVAL_MS, key="bets_en_cours_autorefresh")
 
 # Style global pour le fond de page
 st.markdown(
@@ -52,6 +66,20 @@ st.markdown(
 )
 
 st.title("Paris en cours", text_alignment="center")
+
+_refresh_col1, _refresh_col2 = st.columns([1, 5])
+with _refresh_col1:
+    if st.button("🔄 Rafraîchir", use_container_width=True):
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
+        st.rerun()
+with _refresh_col2:
+    st.caption(
+        f"Auto-refresh toutes les {REFRESH_INTERVAL_MS // 1000}s — "
+        f"dernière mise à jour : {datetime.now().strftime('%H:%M:%S')}"
+    )
 
 
 def display_bet_cards(bets_df, cols_per_row=3):
