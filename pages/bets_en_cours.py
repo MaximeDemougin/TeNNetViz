@@ -241,12 +241,23 @@ if st.session_state.get("logged_in", False):
         bets_data["Gain potentiel"] = (
             bets_data["Mise"] * bets_data["Cote"] - bets_data["Mise"]
         )
-        # EV unit (Marge attendue / Mise) — utilisé comme priorité de suivi
+        # EV unit (Marge attendue / Mise) — calculé pour info
         try:
             bets_data["_ev_unit"] = bets_data["Marge attendue"] / bets_data[
                 "Mise"
             ].replace(0, float("nan"))
-            bets_data = bets_data.sort_values("_ev_unit", ascending=False)
+        except Exception:
+            pass
+
+        # Tri par date de match croissante (les matchs les plus proches en premier)
+        try:
+            _sort_col = "tourney_date" if "tourney_date" in bets_data.columns else "Date"
+            bets_data["_sort_dt"] = pd.to_datetime(
+                bets_data[_sort_col], errors="coerce"
+            )
+            bets_data = bets_data.sort_values(
+                "_sort_dt", ascending=True, na_position="last"
+            ).drop(columns=["_sort_dt"])
         except Exception:
             pass
 
