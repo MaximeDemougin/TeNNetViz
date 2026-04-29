@@ -75,6 +75,16 @@ with st.sidebar:
             st.cache_data.clear()
         except Exception:
             pass
+        # Purge également les copies en session_state pour forcer un rechargement
+        for _k in (
+            "bets_data_cached",
+            "bets_data_user_id",
+            "bankroll_cached",
+            "bankroll_cached_user_id",
+            "cached_total_inplay",
+            "cached_total_inplay_at",
+        ):
+            st.session_state.pop(_k, None)
         st.rerun()
     st.caption(f"Dernière mise à jour : {now_paris().strftime('%H:%M:%S')}")
 
