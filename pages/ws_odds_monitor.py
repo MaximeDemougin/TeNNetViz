@@ -120,8 +120,12 @@ def _market_card_html(row: pd.Series) -> str:
     ev_w = row.get("w_ev")
     ev_l = row.get("l_ev")
     led_match = bool(row.get("match_betable", False))
-    w_lay_cls = "v-best-lay rentable" if bool(row.get("w_betable", False)) else "v-best-lay"
-    l_lay_cls = "v-best-lay rentable" if bool(row.get("l_betable", False)) else "v-best-lay"
+    w_lay_cls = (
+        "v-best-lay rentable" if bool(row.get("w_betable", False)) else "v-best-lay"
+    )
+    l_lay_cls = (
+        "v-best-lay rentable" if bool(row.get("l_betable", False)) else "v-best-lay"
+    )
 
     pred_line = (
         f"Pred W {_fmt_odd(pred_w)} | Pred L {_fmt_odd(pred_l)} | "
