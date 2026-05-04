@@ -53,6 +53,21 @@ def _ev_color(ev: float) -> str:
     return "#e04e4e"
 
 
+def _short_odds_source(src: str) -> str:
+    s = (src or "").strip()
+    mapping = {
+        "WS_odds.home_back": "WS back",
+        "WS_odds.home_back_1": "WS back_1",
+        "WS_odds.home_back_2": "WS back_2",
+        "WS_odds.away_back": "WS back",
+        "WS_odds.away_back_1": "WS back_1",
+        "WS_odds.away_back_2": "WS back_2",
+        "odds.MaxW": "odds MaxW",
+        "odds.MaxL": "odds MaxL",
+    }
+    return mapping.get(s, s or "n/a")
+
+
 def _build_match_rows(df: pd.DataFrame) -> pd.DataFrame:
     """Une ligne par match avec les donnees W et L."""
     cols_lower = {c.lower(): c for c in df.columns}
@@ -95,6 +110,8 @@ def _build_match_rows(df: pd.DataFrame) -> pd.DataFrame:
                 "L_pred": round(l_pred, 3),
                 "W_odds": round(w_odds, 3),
                 "L_odds": round(l_odds, 3),
+                "W_odds_source": str(r.get("w_odds_source") or "odds.MaxW"),
+                "L_odds_source": str(r.get("l_odds_source") or "odds.MaxL"),
                 "W_ev": round(w_ev, 1),
                 "L_ev": round(l_ev, 1),
                 "W_betable": _is_betable(w_ev, w_pred),
@@ -221,6 +238,8 @@ def _render_match_card(r: pd.Series) -> str:
 
     w_name = str(r["W_name"])
     l_name = str(r["L_name"])
+    w_src = _short_odds_source(str(r.get("W_odds_source") or ""))
+    l_src = _short_odds_source(str(r.get("L_odds_source") or ""))
 
     return f"""
 <div class='fm-card{card_cls}'>
@@ -235,6 +254,7 @@ def _render_match_card(r: pd.Series) -> str:
       <div class='fm-side-stats'>
         <span class='fm-chip'>Pred {r["W_pred"]:.2f}</span>
         <span class='fm-chip'>Cote {r["W_odds"]:.2f}</span>
+                <span class='fm-chip'>Src {w_src}</span>
         <span class='fm-ev' style='background:{ev_w_bg};'>EV {ev_w:+.1f}%</span>
       </div>
     </div>
@@ -244,6 +264,7 @@ def _render_match_card(r: pd.Series) -> str:
       <div class='fm-side-stats'>
         <span class='fm-chip'>Pred {r["L_pred"]:.2f}</span>
         <span class='fm-chip'>Cote {r["L_odds"]:.2f}</span>
+                <span class='fm-chip'>Src {l_src}</span>
         <span class='fm-ev' style='background:{ev_l_bg};'>EV {ev_l:+.1f}%</span>
       </div>
     </div>
@@ -432,10 +453,12 @@ with st.expander("Tableau detaille", expanded=False):
         "W_name",
         "W_pred",
         "W_odds",
+        "W_odds_source",
         "W_ev",
         "L_name",
         "L_pred",
         "L_odds",
+        "L_odds_source",
         "L_ev",
         "Best_EV",
         "Any_betable",

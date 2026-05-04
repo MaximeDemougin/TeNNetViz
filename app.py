@@ -95,6 +95,11 @@ orbitx_coverage_page = st.Page(
     title="Couverture Orbitx",
     icon=":material/satellite_alt:",
 )
+ws_odds_monitor_page = st.Page(
+    "pages/ws_odds_monitor.py",
+    title="Monitoring WS_odds",
+    icon=":material/monitoring:",
+)
 
 if st.session_state.logged_in:
     # compute in-play count to show next to the menu label, but cache it with a short TTL
@@ -137,6 +142,7 @@ if st.session_state.logged_in:
                 players_page,
                 streaks_page,
                 orbitx_coverage_page,
+                ws_odds_monitor_page,
                 data_explorer_page,
             ],
         }

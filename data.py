@@ -827,13 +827,64 @@ def _load_future_matchs_cached():
                             'doubles' = TRUE as doubles,
                             'atp' as compet,
                              o.liens as odds_lien,
-                             o.MaxW as max_odds1,
-                             o.MaxL as max_odds2,
+                             coalesce(
+                                 case
+                                     when wo.home_back is not null
+                                          or wo.home_back_1 is not null
+                                          or wo.home_back_2 is not null
+                                     then greatest(
+                                         coalesce(wo.home_back, 0),
+                                         coalesce(wo.home_back_1, 0),
+                                         coalesce(wo.home_back_2, 0)
+                                     )
+                                 end,
+                                 o.MaxW
+                             ) as max_odds1,
+                             coalesce(
+                                 case
+                                     when wo.away_back is not null
+                                          or wo.away_back_1 is not null
+                                          or wo.away_back_2 is not null
+                                     then greatest(
+                                         coalesce(wo.away_back, 0),
+                                         coalesce(wo.away_back_1, 0),
+                                         coalesce(wo.away_back_2, 0)
+                                     )
+                                 end,
+                                 o.MaxL
+                             ) as max_odds2,
+                                case
+                                   when wo.home_back_2 is not null
+                                       and coalesce(wo.home_back_2, -1) >= coalesce(wo.home_back_1, -1)
+                                       and coalesce(wo.home_back_2, -1) >= coalesce(wo.home_back, -1)
+                                   then 'WS_odds.home_back_2'
+                                   when wo.home_back_1 is not null
+                                       and coalesce(wo.home_back_1, -1) >= coalesce(wo.home_back_2, -1)
+                                       and coalesce(wo.home_back_1, -1) >= coalesce(wo.home_back, -1)
+                                   then 'WS_odds.home_back_1'
+                                   when wo.home_back is not null
+                                   then 'WS_odds.home_back'
+                                   else 'odds.MaxW'
+                                end as w_odds_source,
+                                case
+                                   when wo.away_back_2 is not null
+                                       and coalesce(wo.away_back_2, -1) >= coalesce(wo.away_back_1, -1)
+                                       and coalesce(wo.away_back_2, -1) >= coalesce(wo.away_back, -1)
+                                   then 'WS_odds.away_back_2'
+                                   when wo.away_back_1 is not null
+                                       and coalesce(wo.away_back_1, -1) >= coalesce(wo.away_back_2, -1)
+                                       and coalesce(wo.away_back_1, -1) >= coalesce(wo.away_back, -1)
+                                   then 'WS_odds.away_back_1'
+                                   when wo.away_back is not null
+                                   then 'WS_odds.away_back'
+                                   else 'odds.MaxL'
+                                end as l_odds_source,
                              m.ID_MATCH,
                              m.ID_TENNET,
-                             o.maj as odds_maj
+                             coalesce(wo.updated_at, o.maj) as odds_maj
                                     FROM men_matchs m 
                                     right join odds o on (m.ID_MATCH = o.id)
+                                    left join WS_odds wo on (cast(m.ID_MATCH as char) = wo.ID_MATCH)
                                     right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         WHERE m.match_settled = 0
                     UNION
@@ -849,13 +900,64 @@ def _load_future_matchs_cached():
                             'doubles' = TRUE as doubles,
                             'wta' as compet,
                              o.liens as odds_lien,
-                             o.MaxW as max_odds1,
-                             o.MaxL as max_odds2,
+                             coalesce(
+                                 case
+                                     when wo.home_back is not null
+                                          or wo.home_back_1 is not null
+                                          or wo.home_back_2 is not null
+                                     then greatest(
+                                         coalesce(wo.home_back, 0),
+                                         coalesce(wo.home_back_1, 0),
+                                         coalesce(wo.home_back_2, 0)
+                                     )
+                                 end,
+                                 o.MaxW
+                             ) as max_odds1,
+                             coalesce(
+                                 case
+                                     when wo.away_back is not null
+                                          or wo.away_back_1 is not null
+                                          or wo.away_back_2 is not null
+                                     then greatest(
+                                         coalesce(wo.away_back, 0),
+                                         coalesce(wo.away_back_1, 0),
+                                         coalesce(wo.away_back_2, 0)
+                                     )
+                                 end,
+                                 o.MaxL
+                             ) as max_odds2,
+                                case
+                                   when wo.home_back_2 is not null
+                                       and coalesce(wo.home_back_2, -1) >= coalesce(wo.home_back_1, -1)
+                                       and coalesce(wo.home_back_2, -1) >= coalesce(wo.home_back, -1)
+                                   then 'WS_odds.home_back_2'
+                                   when wo.home_back_1 is not null
+                                       and coalesce(wo.home_back_1, -1) >= coalesce(wo.home_back_2, -1)
+                                       and coalesce(wo.home_back_1, -1) >= coalesce(wo.home_back, -1)
+                                   then 'WS_odds.home_back_1'
+                                   when wo.home_back is not null
+                                   then 'WS_odds.home_back'
+                                   else 'odds.MaxW'
+                                end as w_odds_source,
+                                case
+                                   when wo.away_back_2 is not null
+                                       and coalesce(wo.away_back_2, -1) >= coalesce(wo.away_back_1, -1)
+                                       and coalesce(wo.away_back_2, -1) >= coalesce(wo.away_back, -1)
+                                   then 'WS_odds.away_back_2'
+                                   when wo.away_back_1 is not null
+                                       and coalesce(wo.away_back_1, -1) >= coalesce(wo.away_back_2, -1)
+                                       and coalesce(wo.away_back_1, -1) >= coalesce(wo.away_back, -1)
+                                   then 'WS_odds.away_back_1'
+                                   when wo.away_back is not null
+                                   then 'WS_odds.away_back'
+                                   else 'odds.MaxL'
+                                end as l_odds_source,
                              m.ID_MATCH,
                              m.ID_TENNET,
-                             o.maj as odds_maj
+                             coalesce(wo.updated_at, o.maj) as odds_maj
                                     FROM women_matchs m 
                                     right join odds o on (m.ID_MATCH = o.id)
+                                    left join WS_odds wo on (cast(m.ID_MATCH as char) = wo.ID_MATCH)
                                     right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         WHERE m.match_settled = 0
                     UNION
@@ -871,16 +973,143 @@ def _load_future_matchs_cached():
                                 'doubles' = FALSE as doubles,
                                 'doubles' as compet,
                                 o.liens as odds_lien,
-                                o.MaxW as max_odds1,
-                                o.MaxL as max_odds2,
+                                coalesce(
+                                    case
+                                        when wo.home_back is not null
+                                             or wo.home_back_1 is not null
+                                             or wo.home_back_2 is not null
+                                        then greatest(
+                                            coalesce(wo.home_back, 0),
+                                            coalesce(wo.home_back_1, 0),
+                                            coalesce(wo.home_back_2, 0)
+                                        )
+                                    end,
+                                    o.MaxW
+                                ) as max_odds1,
+                                coalesce(
+                                    case
+                                        when wo.away_back is not null
+                                             or wo.away_back_1 is not null
+                                             or wo.away_back_2 is not null
+                                        then greatest(
+                                            coalesce(wo.away_back, 0),
+                                            coalesce(wo.away_back_1, 0),
+                                            coalesce(wo.away_back_2, 0)
+                                        )
+                                    end,
+                                    o.MaxL
+                                ) as max_odds2,
+                                  case
+                                     when wo.home_back_2 is not null
+                                         and coalesce(wo.home_back_2, -1) >= coalesce(wo.home_back_1, -1)
+                                         and coalesce(wo.home_back_2, -1) >= coalesce(wo.home_back, -1)
+                                     then 'WS_odds.home_back_2'
+                                     when wo.home_back_1 is not null
+                                         and coalesce(wo.home_back_1, -1) >= coalesce(wo.home_back_2, -1)
+                                         and coalesce(wo.home_back_1, -1) >= coalesce(wo.home_back, -1)
+                                     then 'WS_odds.home_back_1'
+                                     when wo.home_back is not null
+                                     then 'WS_odds.home_back'
+                                     else 'odds.MaxW'
+                                  end as w_odds_source,
+                                  case
+                                     when wo.away_back_2 is not null
+                                         and coalesce(wo.away_back_2, -1) >= coalesce(wo.away_back_1, -1)
+                                         and coalesce(wo.away_back_2, -1) >= coalesce(wo.away_back, -1)
+                                     then 'WS_odds.away_back_2'
+                                     when wo.away_back_1 is not null
+                                         and coalesce(wo.away_back_1, -1) >= coalesce(wo.away_back_2, -1)
+                                         and coalesce(wo.away_back_1, -1) >= coalesce(wo.away_back, -1)
+                                     then 'WS_odds.away_back_1'
+                                     when wo.away_back is not null
+                                     then 'WS_odds.away_back'
+                                     else 'odds.MaxL'
+                                  end as l_odds_source,
                              m.ID_MATCH,
                              NULL as ID_TENNET,
-                             o.maj as odds_maj
+                             coalesce(wo.updated_at, o.maj) as odds_maj
                                     FROM double_matchs m
                                     right join odds o on (m.ID_MATCH = o.id)
+                                    left join WS_odds wo on (cast(m.ID_MATCH as char) = wo.ID_MATCH)
                                     right join predictions p on (m.ID_MATCH = p.ID_MATCH)
                                         WHERE m.match_settled = 0"""
     matchs_data = read_sql_query(BDD, query_matchs)
     matchs_data.sort_values(by="tourney_date", ascending=True, inplace=True)
     matchs_data.reset_index(drop=True, inplace=True)
     return matchs_data
+
+
+def load_ws_odds_monitor():
+    """Load WS_odds rows enriched with match metadata for monitoring."""
+    return _load_ws_odds_monitor_cached()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_ws_odds_monitor_cached():
+    query = """
+        SELECT
+            ws.id,
+            ws.ID_MATCH,
+            ws.ID_MARKET,
+            ws.created_at,
+            ws.updated_at,
+            ws.status,
+            ws.inplay,
+            ws.n_updates,
+            ws.winner_name as ws_winner_name,
+            ws.loser_name as ws_loser_name,
+            ws.home_back,
+            ws.home_back_1,
+            ws.home_back_2,
+            ws.home_lay,
+            ws.home_lay_1,
+            ws.home_lay_2,
+            ws.away_back,
+            ws.away_back_1,
+            ws.away_back_2,
+            ws.away_lay,
+            ws.away_lay_1,
+            ws.away_lay_2,
+            p.pred_w_used,
+            p.pred_l_used,
+            CASE
+                WHEN m.ID_MATCH IS NOT NULL THEN 'atp'
+                WHEN w.ID_MATCH IS NOT NULL THEN 'wta'
+                WHEN d.ID_MATCH IS NOT NULL THEN 'doubles'
+                ELSE 'unknown'
+            END AS compet,
+            coalesce(m.tourney_name, w.tourney_name, d.tourney_name) as tourney_name,
+            coalesce(m.round, w.round, d.round) as round,
+            coalesce(m.surface, w.surface, d.surface) as surface,
+            coalesce(m.tourney_date, w.tourney_date, d.tourney_date) as tourney_date,
+            coalesce(m.match_settled, w.match_settled, d.match_settled) as match_settled,
+            coalesce(
+                m.winner_name,
+                w.winner_name,
+                concat(d.winner_name1, '/', d.winner_name2),
+                ws.winner_name
+            ) as winner_name,
+            coalesce(
+                m.loser_name,
+                w.loser_name,
+                concat(d.loser_name1, '/', d.loser_name2),
+                ws.loser_name
+            ) as loser_name
+        FROM WS_odds ws
+        LEFT JOIN men_matchs m ON cast(m.ID_MATCH as char) = ws.ID_MATCH
+        LEFT JOIN women_matchs w ON cast(w.ID_MATCH as char) = ws.ID_MATCH
+        LEFT JOIN double_matchs d ON cast(d.ID_MATCH as char) = ws.ID_MATCH
+        LEFT JOIN predictions p ON cast(p.ID_MATCH as char) = ws.ID_MATCH
+    """
+
+    df = read_sql_query(BDD, query)
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    # Keep most recently updated rows first for monitoring.
+    try:
+        df["updated_at"] = pd.to_datetime(df["updated_at"], errors="coerce")
+        df = df.sort_values("updated_at", ascending=False)
+    except Exception:
+        logger.exception("load_ws_odds_monitor: failed to sort updated_at")
+    return df.reset_index(drop=True)
