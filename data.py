@@ -1044,7 +1044,7 @@ def load_ws_odds_monitor():
     return _load_ws_odds_monitor_cached()
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=15, show_spinner=False)
 def _load_ws_odds_monitor_cached():
     query = """
         SELECT

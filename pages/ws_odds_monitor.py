@@ -72,7 +72,6 @@ LAYOUT_TO_COLS = {
 }
 
 
-@st.cache_data(ttl=60, show_spinner=False)
 def _get_ws_data() -> pd.DataFrame:
     return load_ws_odds_monitor()
 
@@ -346,7 +345,9 @@ df = df.copy()
 df["updated_at"] = pd.to_datetime(df.get("updated_at"), errors="coerce")
 df["tourney_date"] = pd.to_datetime(df.get("tourney_date"), errors="coerce")
 now_ts = pd.Timestamp(now_paris())
-inplay_raw = _as_float(df.get("inplay", pd.Series(index=df.index, dtype=float))).fillna(0)
+inplay_raw = _as_float(df.get("inplay", pd.Series(index=df.index, dtype=float))).fillna(
+    0
+)
 df["is_inplay_effective"] = (inplay_raw == 1) | (
     df["tourney_date"].notna() & (df["tourney_date"] <= now_ts)
 )
@@ -480,6 +481,10 @@ k4.metric(
     "Derniere update",
     last_upd.strftime("%d/%m %H:%M:%S") if pd.notna(last_upd) else "-",
 )
+with st.sidebar:
+    st.caption(
+        f"Dernière maj data WS : {last_upd.strftime('%d/%m %H:%M:%S') if pd.notna(last_upd) else '-'}"
+    )
 
 st.divider()
 
