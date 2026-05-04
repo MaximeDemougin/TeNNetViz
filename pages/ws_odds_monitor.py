@@ -89,6 +89,29 @@ def _fmt_odd(v) -> str:
         return "-"
 
 
+def _fmt_size(v) -> str:
+    if v is None or pd.isna(v):
+        return ""
+    try:
+        f = float(v)
+    except Exception:
+        return ""
+    if f <= 0:
+        return ""
+    if f >= 1000:
+        return f"€{f / 1000:.1f}k"
+    return f"€{f:.0f}"
+
+
+def _cell(cls: str, odd, size) -> str:
+    return (
+        f"<strong class='{cls}'>"
+        f"<span class='ws-odd'>{_fmt_odd(odd)}</span>"
+        f"<span class='ws-size'>{_fmt_size(size)}</span>"
+        f"</strong>"
+    )
+
+
 def _fmt_ts(v) -> str:
     ts = pd.to_datetime(v, errors="coerce")
     if pd.isna(ts):
@@ -155,8 +178,8 @@ def _market_card_html(row: pd.Series) -> str:
             <div class='ws-meta'>{pred_line}</div>
         </div>
         <div class='ws-right'>
-            <span class='ws-pill {'ws-pill-inplay' if inplay_badge == 'INPLAY' else 'ws-pill-pre'}'>{inplay_badge}</span>
-            <span class='ws-pill {'ws-led-on' if led_match else 'ws-led-off'}'>{'BET' if led_match else 'NO BET'}</span>
+            <span class='ws-pill {"ws-pill-inplay" if inplay_badge == "INPLAY" else "ws-pill-pre"}'>{inplay_badge}</span>
+            <span class='ws-pill {"ws-led-on" if led_match else "ws-led-off"}'>{"BET" if led_match else "NO BET"}</span>
             <span class='ws-link'>{f"<a href='{orbitx_url}' target='_blank' rel='noopener noreferrer'>OrbitX</a>" if orbitx_url else ""}</span>
             <span class='ws-time'>Maj {_fmt_ts(row.get("updated_at"))}</span>
         </div>
@@ -173,21 +196,21 @@ def _market_card_html(row: pd.Series) -> str:
         </div>
         <div class='ws-grid-row'>
             <span class='p-col'>{home_name}</span>
-            <strong class='v-back'>{_fmt_odd(row.get("home_back_2"))}</strong>
-            <strong class='v-back'>{_fmt_odd(row.get("home_back_1"))}</strong>
-            <strong class='v-best-back'>{_fmt_odd(row.get("best_home_back"))}</strong>
-            <strong class='{w_lay_cls}'>{_fmt_odd(row.get("best_home_lay"))}</strong>
-            <strong class='v-lay'>{_fmt_odd(row.get("home_lay_1"))}</strong>
-            <strong class='v-lay'>{_fmt_odd(row.get("home_lay_2"))}</strong>
+            {_cell("v-back", row.get("home_back_2"), row.get("home_back_2_size"))}
+            {_cell("v-back", row.get("home_back_1"), row.get("home_back_1_size"))}
+            {_cell("v-best-back", row.get("best_home_back"), row.get("best_home_back_size"))}
+            {_cell(w_lay_cls, row.get("best_home_lay"), row.get("best_home_lay_size"))}
+            {_cell("v-lay", row.get("home_lay_1"), row.get("home_lay_1_size"))}
+            {_cell("v-lay", row.get("home_lay_2"), row.get("home_lay_2_size"))}
         </div>
         <div class='ws-grid-row'>
             <span class='p-col'>{away_name}</span>
-            <strong class='v-back'>{_fmt_odd(row.get("away_back_2"))}</strong>
-            <strong class='v-back'>{_fmt_odd(row.get("away_back_1"))}</strong>
-            <strong class='v-best-back'>{_fmt_odd(row.get("best_away_back"))}</strong>
-            <strong class='{l_lay_cls}'>{_fmt_odd(row.get("best_away_lay"))}</strong>
-            <strong class='v-lay'>{_fmt_odd(row.get("away_lay_1"))}</strong>
-            <strong class='v-lay'>{_fmt_odd(row.get("away_lay_2"))}</strong>
+            {_cell("v-back", row.get("away_back_2"), row.get("away_back_2_size"))}
+            {_cell("v-back", row.get("away_back_1"), row.get("away_back_1_size"))}
+            {_cell("v-best-back", row.get("best_away_back"), row.get("best_away_back_size"))}
+            {_cell(l_lay_cls, row.get("best_away_lay"), row.get("best_away_lay_size"))}
+            {_cell("v-lay", row.get("away_lay_1"), row.get("away_lay_1_size"))}
+            {_cell("v-lay", row.get("away_lay_2"), row.get("away_lay_2_size"))}
         </div>
         <div class='ws-best'>Spread H {_fmt_odd(row.get("home_spread"))} | Spread A {_fmt_odd(row.get("away_spread"))}</div>
     </div>
@@ -296,6 +319,20 @@ _WS_CSS = """
     font-size: 12px;
     border-radius: 6px;
     padding: 5px 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.05;
+}
+.ws-grid-row strong .ws-odd {
+    font-size: 12px;
+    font-weight: 700;
+}
+.ws-grid-row strong .ws-size {
+    font-size: 9px;
+    font-weight: 500;
+    opacity: 0.8;
+    margin-top: 1px;
 }
 .v-back {
     background: rgba(120, 195, 255, 0.92);
@@ -342,6 +379,13 @@ if df is None or df.empty:
     st.stop()
 
 df = df.copy()
+# Exclure les matchs terminés (match_settled vrai)
+if "match_settled" in df.columns:
+    settled = pd.to_numeric(df["match_settled"], errors="coerce").fillna(0)
+    df = df[settled == 0].copy()
+if df.empty:
+    st.info("Aucun match en cours ou à venir.")
+    st.stop()
 df["updated_at"] = pd.to_datetime(df.get("updated_at"), errors="coerce")
 df["tourney_date"] = pd.to_datetime(df.get("tourney_date"), errors="coerce")
 now_ts = pd.Timestamp(now_paris())
@@ -389,6 +433,48 @@ df["best_home_back"] = df[home_back_cols].max(axis=1, skipna=True)
 df["best_away_back"] = df[away_back_cols].max(axis=1, skipna=True)
 df["best_home_lay"] = df[home_lay_cols].min(axis=1, skipna=True)
 df["best_away_lay"] = df[away_lay_cols].min(axis=1, skipna=True)
+
+
+def _pick_size(row, odd_cols, size_cols, best_value):
+    if pd.isna(best_value):
+        return None
+    for oc, sc in zip(odd_cols, size_cols):
+        v = row.get(oc)
+        if pd.notna(v) and float(v) == float(best_value):
+            return row.get(sc)
+    return None
+
+
+home_back_size_cols = ["home_back_size", "home_back_1_size", "home_back_2_size"]
+home_lay_size_cols = ["home_lay_size", "home_lay_1_size", "home_lay_2_size"]
+away_back_size_cols = ["away_back_size", "away_back_1_size", "away_back_2_size"]
+away_lay_size_cols = ["away_lay_size", "away_lay_1_size", "away_lay_2_size"]
+
+for col in (
+    home_back_size_cols + home_lay_size_cols + away_back_size_cols + away_lay_size_cols
+):
+    if col in df.columns:
+        df[col] = _as_float(df[col])
+    else:
+        df[col] = pd.NA
+
+df["best_home_back_size"] = df.apply(
+    lambda r: _pick_size(r, home_back_cols, home_back_size_cols, r["best_home_back"]),
+    axis=1,
+)
+df["best_away_back_size"] = df.apply(
+    lambda r: _pick_size(r, away_back_cols, away_back_size_cols, r["best_away_back"]),
+    axis=1,
+)
+df["best_home_lay_size"] = df.apply(
+    lambda r: _pick_size(r, home_lay_cols, home_lay_size_cols, r["best_home_lay"]),
+    axis=1,
+)
+df["best_away_lay_size"] = df.apply(
+    lambda r: _pick_size(r, away_lay_cols, away_lay_size_cols, r["best_away_lay"]),
+    axis=1,
+)
+
 df["home_spread"] = df["best_home_lay"] - df["best_home_back"]
 df["away_spread"] = df["best_away_lay"] - df["best_away_back"]
 df["w_ev"] = df.apply(
