@@ -55,6 +55,22 @@ with st.sidebar:
         st.rerun()
     st.caption(f"Dernière mise à jour : {now_paris().strftime('%H:%M:%S')}")
 
+    st.divider()
+    st.markdown("### Vue graphique")
+    layout_choice = st.radio(
+        "Layout",
+        options=["▤ 1 colonne", "▥ 2 colonnes", "▦ 3 colonnes"],
+        index=1,
+        key="ws_layout_choice",
+        label_visibility="collapsed",
+    )
+
+LAYOUT_TO_COLS = {
+    "▤ 1 colonne": 1,
+    "▥ 2 colonnes": 2,
+    "▦ 3 colonnes": 3,
+}
+
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _get_ws_data() -> pd.DataFrame:
@@ -103,15 +119,12 @@ def _is_betable(ev: float, pred: float) -> bool:
 
 
 def _market_card_html(row: pd.Series) -> str:
-    inplay_badge = (
-        "INPLAY"
-        if int(pd.to_numeric(row.get("inplay"), errors="coerce") or 0) == 1
-        else "PRE"
-    )
+    inplay_badge = "INPLAY" if bool(row.get("is_inplay_effective", False)) else "PRE"
     match_label = str(row.get("match_label") or "-")
     tournament = str(row.get("tourney_name") or "-")
     status = str(row.get("status") or "-")
     compet = str(row.get("compet") or "-")
+    kickoff = str(row.get("kickoff_hhmm") or "-")
     home_name = str(row.get("winner_name") or "Joueur1")
     away_name = str(row.get("loser_name") or "Joueur2")
     orbitx_url = _orbitx_url(row.get("ID_MARKET"))
@@ -139,11 +152,11 @@ def _market_card_html(row: pd.Series) -> str:
     <div class='ws-head'>
         <div class='ws-left'>
             <div class='ws-match'>{match_label}</div>
-            <div class='ws-meta'>{tournament} | {compet} | {status}</div>
+            <div class='ws-meta'>{tournament} | {compet} | {status} | Début {kickoff}</div>
             <div class='ws-meta'>{pred_line}</div>
         </div>
         <div class='ws-right'>
-            <span class='ws-pill'>{inplay_badge}</span>
+            <span class='ws-pill {'ws-pill-inplay' if inplay_badge == 'INPLAY' else 'ws-pill-pre'}'>{inplay_badge}</span>
             <span class='ws-pill {'ws-led-on' if led_match else 'ws-led-off'}'>{'BET' if led_match else 'NO BET'}</span>
             <span class='ws-link'>{f"<a href='{orbitx_url}' target='_blank' rel='noopener noreferrer'>OrbitX</a>" if orbitx_url else ""}</span>
             <span class='ws-time'>Maj {_fmt_ts(row.get("updated_at"))}</span>
@@ -216,6 +229,15 @@ _WS_CSS = """
     border-radius: 999px;
     font-size: 10px;
     padding: 2px 8px;
+    background: rgba(255,255,255,0.09);
+    color: #cbd5e1;
+}
+.ws-pill-inplay {
+    background: rgba(253, 224, 71, 0.9);
+    color: #3f2f00;
+    border: 1px solid rgba(253, 224, 71, 0.95);
+}
+.ws-pill-pre {
     background: rgba(255,255,255,0.09);
     color: #cbd5e1;
 }
@@ -323,6 +345,12 @@ if df is None or df.empty:
 df = df.copy()
 df["updated_at"] = pd.to_datetime(df.get("updated_at"), errors="coerce")
 df["tourney_date"] = pd.to_datetime(df.get("tourney_date"), errors="coerce")
+now_ts = pd.Timestamp(now_paris())
+inplay_raw = _as_float(df.get("inplay", pd.Series(index=df.index, dtype=float))).fillna(0)
+df["is_inplay_effective"] = (inplay_raw == 1) | (
+    df["tourney_date"].notna() & (df["tourney_date"] <= now_ts)
+)
+df["kickoff_hhmm"] = df["tourney_date"].dt.strftime("%H:%M").fillna("-")
 df["match_label"] = (
     df.get("winner_name", "").astype(str) + " - " + df.get("loser_name", "").astype(str)
 )
@@ -415,7 +443,7 @@ if selected_comp:
 if selected_status:
     view = view[view["status"].isin(selected_status)]
 if only_pre:
-    view = view[_as_float(view.get("inplay", pd.Series(dtype=float))).fillna(0) != 1]
+    view = view[~view["is_inplay_effective"]]
 if bet_mode == "BET uniquement":
     view = view[view["match_betable"] == True]
 elif bet_mode == "NO BET uniquement":
@@ -438,9 +466,7 @@ if view.empty:
 # KPIs
 # ---------------------------------------------------------------------------
 rows_count = len(view)
-inplay_count = int(
-    (_as_float(view.get("inplay", pd.Series(dtype=float))).fillna(0) == 1).sum()
-)
+inplay_count = int(view["is_inplay_effective"].sum())
 mean_updates = float(
     _as_float(view.get("n_updates", pd.Series(dtype=float))).fillna(0).mean()
 )
@@ -463,25 +489,15 @@ st.divider()
 st.markdown("### Vue graphique des marches")
 st.markdown(_WS_CSS, unsafe_allow_html=True)
 
-g1, g2 = st.columns([1, 2])
-with g1:
-    max_cards = st.slider(
-        "Nombre de marches affiches", min_value=5, max_value=80, value=18, step=1
-    )
-with g2:
-    st.caption(
-        "Back en bleu, Lay en rose. Chaque ligne montre les 3 niveaux de prix et le spread estime."
-    )
+st.caption(
+    "Back en bleu, Lay en rose. Chaque ligne montre les 3 niveaux de prix et le spread estimé."
+)
 
-g3, _ = st.columns([1, 3])
-with g3:
-    grid_cols = st.slider(
-        "Colonnes d'affichage", min_value=1, max_value=4, value=3, step=1
-    )
+grid_cols = LAYOUT_TO_COLS.get(layout_choice, 3)
 
 cards_df = view.sort_values(
     ["tourney_date", "match_label"], ascending=[True, True], na_position="last"
-).head(int(max_cards))
+)
 
 comp_order = sort_competitions(cards_df["compet"].dropna().unique().tolist())
 for comp in comp_order:
@@ -524,12 +540,14 @@ display_cols = [
     "compet",
     "status",
     "inplay",
+    "is_inplay_effective",
     "ID_MATCH",
     "ID_MARKET",
     "orbitx_link",
     "match_label",
     "tourney_name",
     "tourney_date",
+    "kickoff_hhmm",
     "home_back",
     "home_back_1",
     "home_back_2",
@@ -570,6 +588,8 @@ col_cfg = {
     "tourney_date": st.column_config.DatetimeColumn(
         "Date match", format="DD/MM/YYYY HH:mm"
     ),
+    "kickoff_hhmm": st.column_config.TextColumn("Heure match"),
+    "is_inplay_effective": st.column_config.CheckboxColumn("Inplay effectif"),
     "orbitx_link": st.column_config.LinkColumn("OrbitX", display_text="ouvrir"),
     "home_back": st.column_config.NumberColumn("H Back", format="%.3f"),
     "home_back_1": st.column_config.NumberColumn("H Back 1", format="%.3f"),
