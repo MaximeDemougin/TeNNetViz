@@ -84,7 +84,7 @@ def _fmt_odd(v) -> str:
     if pd.isna(v):
         return "-"
     try:
-        return f"{float(v):.3f}"
+        return f"{float(v):.2f}"
     except Exception:
         return "-"
 
@@ -99,8 +99,8 @@ def _fmt_size(v) -> str:
     if f <= 0:
         return ""
     if f >= 1000:
-        return f"€{f / 1000:.1f}k"
-    return f"€{f:.0f}"
+        return f"{f / 1000:.1f}k"
+    return f"{f:.0f}"
 
 
 def _cell(cls: str, odd, size) -> str:
@@ -302,13 +302,13 @@ _WS_CSS = """
     margin-bottom: 6px;
 }
 .ws-grid-head span {
-    font-size: 10px;
+    font-size: 11px;
     color: #94a3b8;
     font-weight: 700;
     text-align: center;
 }
 .ws-grid-row .p-col {
-    font-size: 11px;
+    font-size: 12px;
     color: #e2e8f0;
     text-align: left;
     font-weight: 700;
@@ -316,31 +316,35 @@ _WS_CSS = """
 }
 .ws-grid-row strong {
     text-align: center;
-    font-size: 12px;
+    font-size: 14px;
     border-radius: 6px;
-    padding: 5px 4px;
+    padding: 6px 4px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    line-height: 1.05;
+    line-height: 1.08;
 }
 .ws-grid-row strong .ws-odd {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 700;
 }
 .ws-grid-row strong .ws-size {
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 500;
     opacity: 0.8;
     margin-top: 1px;
 }
 .v-back {
-    background: rgba(120, 195, 255, 0.92);
-    color: #082f49;
+    background: transparent;
+    color: #e2e8f0;
+    border: 1px solid rgba(120, 195, 255, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(120, 195, 255, 0.08);
 }
 .v-lay {
-    background: rgba(255, 168, 192, 0.92);
-    color: #4a1020;
+    background: transparent;
+    color: #e2e8f0;
+    border: 1px solid rgba(255, 168, 192, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(255, 168, 192, 0.08);
 }
 .v-best-back {
     background: rgba(67, 153, 239, 0.95);
