@@ -84,7 +84,7 @@ def _fmt_odd(v) -> str:
     if pd.isna(v):
         return "-"
     try:
-        return f"{float(v):.3f}"
+        return f"{float(v):.2f}"
     except Exception:
         return "-"
 
@@ -98,9 +98,9 @@ def _fmt_size(v) -> str:
         return ""
     if f <= 0:
         return ""
-    if f >= 1000:
-        return f"€{f / 1000:.1f}k"
-    return f"€{f:.0f}"
+    if float(f).is_integer():
+        return f"{int(f)}"
+    return f"{f:.2f}"
 
 
 def _cell(cls: str, odd, size) -> str:
@@ -198,8 +198,8 @@ def _market_card_html(row: pd.Series) -> str:
             <span class='p-col'>{home_name}</span>
             {_cell("v-back", row.get("home_back_2"), row.get("home_back_2_size"))}
             {_cell("v-back", row.get("home_back_1"), row.get("home_back_1_size"))}
-            {_cell("v-best-back", row.get("best_home_back"), row.get("best_home_back_size"))}
-            {_cell(w_lay_cls, row.get("best_home_lay"), row.get("best_home_lay_size"))}
+            {_cell("v-best-back", row.get("home_back"), row.get("home_back_size"))}
+            {_cell(w_lay_cls, row.get("home_lay"), row.get("home_lay_size"))}
             {_cell("v-lay", row.get("home_lay_1"), row.get("home_lay_1_size"))}
             {_cell("v-lay", row.get("home_lay_2"), row.get("home_lay_2_size"))}
         </div>
@@ -207,8 +207,8 @@ def _market_card_html(row: pd.Series) -> str:
             <span class='p-col'>{away_name}</span>
             {_cell("v-back", row.get("away_back_2"), row.get("away_back_2_size"))}
             {_cell("v-back", row.get("away_back_1"), row.get("away_back_1_size"))}
-            {_cell("v-best-back", row.get("best_away_back"), row.get("best_away_back_size"))}
-            {_cell(l_lay_cls, row.get("best_away_lay"), row.get("best_away_lay_size"))}
+            {_cell("v-best-back", row.get("away_back"), row.get("away_back_size"))}
+            {_cell(l_lay_cls, row.get("away_lay"), row.get("away_lay_size"))}
             {_cell("v-lay", row.get("away_lay_1"), row.get("away_lay_1_size"))}
             {_cell("v-lay", row.get("away_lay_2"), row.get("away_lay_2_size"))}
         </div>
@@ -291,24 +291,24 @@ _WS_CSS = """
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.07);
     border-radius: 10px;
-    padding: 9px;
+    padding: 7px;
 }
 .ws-grid-head,
 .ws-grid-row {
     display: grid;
-    grid-template-columns: 1.8fr repeat(6, 1fr);
-    gap: 6px;
+    grid-template-columns: 1.45fr repeat(6, minmax(44px, 0.72fr));
+    gap: 4px;
     align-items: center;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
 }
 .ws-grid-head span {
-    font-size: 10px;
+    font-size: 9px;
     color: #94a3b8;
     font-weight: 700;
     text-align: center;
 }
 .ws-grid-row .p-col {
-    font-size: 11px;
+    font-size: 10px;
     color: #e2e8f0;
     text-align: left;
     font-weight: 700;
@@ -316,20 +316,23 @@ _WS_CSS = """
 }
 .ws-grid-row strong {
     text-align: center;
-    font-size: 12px;
-    border-radius: 6px;
-    padding: 5px 4px;
+    font-size: 11px;
+    border-radius: 5px;
+    padding: 4px 3px;
     display: flex;
     flex-direction: column;
     align-items: center;
     line-height: 1.05;
+    min-width: 44px;
+    max-width: 58px;
+    justify-self: center;
 }
 .ws-grid-row strong .ws-odd {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
 }
 .ws-grid-row strong .ws-size {
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 500;
     opacity: 0.8;
     margin-top: 1px;
@@ -364,7 +367,7 @@ _WS_CSS = """
 @media (max-width: 900px) {
     .ws-grid-head,
     .ws-grid-row {
-        grid-template-columns: 1.8fr repeat(3, 1fr);
+        grid-template-columns: 1.4fr repeat(3, minmax(44px, 0.78fr));
     }
 }
 </style>
@@ -682,30 +685,30 @@ col_cfg = {
     "kickoff_hhmm": st.column_config.TextColumn("Heure match"),
     "is_inplay_effective": st.column_config.CheckboxColumn("Inplay effectif"),
     "orbitx_link": st.column_config.LinkColumn("OrbitX", display_text="ouvrir"),
-    "home_back": st.column_config.NumberColumn("H Back", format="%.3f"),
-    "home_back_1": st.column_config.NumberColumn("H Back 1", format="%.3f"),
-    "home_back_2": st.column_config.NumberColumn("H Back 2", format="%.3f"),
-    "pred_w_used": st.column_config.NumberColumn("Pred W", format="%.3f"),
-    "best_home_back": st.column_config.NumberColumn("Best H Back", format="%.3f"),
+    "home_back": st.column_config.NumberColumn("H Back", format="%.2f"),
+    "home_back_1": st.column_config.NumberColumn("H Back 1", format="%.2f"),
+    "home_back_2": st.column_config.NumberColumn("H Back 2", format="%.2f"),
+    "pred_w_used": st.column_config.NumberColumn("Pred W", format="%.2f"),
+    "best_home_back": st.column_config.NumberColumn("Best H Back", format="%.2f"),
     "w_ev": st.column_config.NumberColumn("EV W%", format="%+.1f"),
     "w_betable": st.column_config.CheckboxColumn("W betable"),
-    "home_lay": st.column_config.NumberColumn("H Lay", format="%.3f"),
-    "home_lay_1": st.column_config.NumberColumn("H Lay 1", format="%.3f"),
-    "home_lay_2": st.column_config.NumberColumn("H Lay 2", format="%.3f"),
-    "best_home_lay": st.column_config.NumberColumn("Best H Lay", format="%.3f"),
-    "home_spread": st.column_config.NumberColumn("Spread H", format="%.3f"),
-    "away_back": st.column_config.NumberColumn("A Back", format="%.3f"),
-    "away_back_1": st.column_config.NumberColumn("A Back 1", format="%.3f"),
-    "away_back_2": st.column_config.NumberColumn("A Back 2", format="%.3f"),
-    "pred_l_used": st.column_config.NumberColumn("Pred L", format="%.3f"),
-    "best_away_back": st.column_config.NumberColumn("Best A Back", format="%.3f"),
+    "home_lay": st.column_config.NumberColumn("H Lay", format="%.2f"),
+    "home_lay_1": st.column_config.NumberColumn("H Lay 1", format="%.2f"),
+    "home_lay_2": st.column_config.NumberColumn("H Lay 2", format="%.2f"),
+    "best_home_lay": st.column_config.NumberColumn("Best H Lay", format="%.2f"),
+    "home_spread": st.column_config.NumberColumn("Spread H", format="%.2f"),
+    "away_back": st.column_config.NumberColumn("A Back", format="%.2f"),
+    "away_back_1": st.column_config.NumberColumn("A Back 1", format="%.2f"),
+    "away_back_2": st.column_config.NumberColumn("A Back 2", format="%.2f"),
+    "pred_l_used": st.column_config.NumberColumn("Pred L", format="%.2f"),
+    "best_away_back": st.column_config.NumberColumn("Best A Back", format="%.2f"),
     "l_ev": st.column_config.NumberColumn("EV L%", format="%+.1f"),
     "l_betable": st.column_config.CheckboxColumn("L betable"),
-    "away_lay": st.column_config.NumberColumn("A Lay", format="%.3f"),
-    "away_lay_1": st.column_config.NumberColumn("A Lay 1", format="%.3f"),
-    "away_lay_2": st.column_config.NumberColumn("A Lay 2", format="%.3f"),
-    "best_away_lay": st.column_config.NumberColumn("Best A Lay", format="%.3f"),
-    "away_spread": st.column_config.NumberColumn("Spread A", format="%.3f"),
+    "away_lay": st.column_config.NumberColumn("A Lay", format="%.2f"),
+    "away_lay_1": st.column_config.NumberColumn("A Lay 1", format="%.2f"),
+    "away_lay_2": st.column_config.NumberColumn("A Lay 2", format="%.2f"),
+    "best_away_lay": st.column_config.NumberColumn("Best A Lay", format="%.2f"),
+    "away_spread": st.column_config.NumberColumn("Spread A", format="%.2f"),
     "match_betable": st.column_config.CheckboxColumn("Match betable"),
 }
 
