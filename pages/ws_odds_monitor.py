@@ -296,10 +296,10 @@ _WS_CSS = """
 .ws-grid-head,
 .ws-grid-row {
     display: grid;
-    grid-template-columns: 1.45fr repeat(6, minmax(44px, 0.72fr));
-    gap: 4px;
+    grid-template-columns: 1.55fr repeat(6, 1fr);
+    gap: 2px;
     align-items: center;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
 }
 .ws-grid-head span {
     font-size: 9px;
@@ -317,15 +317,15 @@ _WS_CSS = """
 .ws-grid-row strong {
     text-align: center;
     font-size: 11px;
-    border-radius: 5px;
-    padding: 4px 3px;
+    border-radius: 4px;
+    padding: 3px 2px;
     display: flex;
     flex-direction: column;
     align-items: center;
     line-height: 1.05;
-    min-width: 44px;
-    max-width: 58px;
-    justify-self: center;
+    width: 100%;
+    box-sizing: border-box;
+    justify-self: stretch;
 }
 .ws-grid-row strong .ws-odd {
     font-size: 11px;
@@ -338,22 +338,24 @@ _WS_CSS = """
     margin-top: 1px;
 }
 .v-back {
-    background: rgba(120, 195, 255, 0.92);
-    color: #082f49;
+    background: #a7d8ff;
+    color: #07233f;
+    box-shadow: inset 0 0 0 1px rgba(7, 35, 63, 0.12);
 }
 .v-lay {
-    background: rgba(255, 168, 192, 0.92);
-    color: #4a1020;
+    background: #f3b3c7;
+    color: #3b0c1d;
+    box-shadow: inset 0 0 0 1px rgba(59, 12, 29, 0.12);
 }
 .v-best-back {
-    background: rgba(67, 153, 239, 0.95);
+    background: #8bc7ff;
     color: #07233f;
-    box-shadow: inset 0 0 0 1px rgba(7, 35, 63, 0.25);
+    box-shadow: inset 0 0 0 1px rgba(7, 35, 63, 0.2);
 }
 .v-best-lay {
-    background: rgba(236, 114, 152, 0.95);
+    background: #ee9fba;
     color: #3b0c1d;
-    box-shadow: inset 0 0 0 1px rgba(59, 12, 29, 0.25);
+    box-shadow: inset 0 0 0 1px rgba(59, 12, 29, 0.2);
 }
 .v-best-lay.rentable {
     border: 2px solid #22c55e;
@@ -367,7 +369,8 @@ _WS_CSS = """
 @media (max-width: 900px) {
     .ws-grid-head,
     .ws-grid-row {
-        grid-template-columns: 1.4fr repeat(3, minmax(44px, 0.78fr));
+        grid-template-columns: 1.4fr repeat(3, 1fr);
+        gap: 2px;
     }
 }
 </style>
