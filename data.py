@@ -246,28 +246,44 @@ def _prepare_bets_data_cached(user_id: int, finished: bool):
         return empty_df
 
     bets_data["Match"] = bets_data["winner_name"] + " - " + bets_data["loser_name"]
-    # real_odds applies a bookmaker margin adjustment (vig removal)
-    bets_data["real_odds"] = (1 / (bets_data["odds"] - 1)) * BOOKMAKER_MARGIN_FACTOR + 1
+    # real_odds applies a bookmaker margin adjustment (vig removal).
+    # Back bets: the stored odds are the back odds of the bet player, so the net
+    # win per unit staked is (odds - 1).
+    # Lay bets: the stored odds are the lay odds, equivalent to backing the
+    # opponent at 1 / (odds - 1) per unit staked.
+    if "side_back_lay" in bets_data.columns:
+        is_back = (
+            bets_data["side_back_lay"].astype(str).str.strip().str.lower() == "back"
+        )
+    else:
+        # Backward compatibility: legacy data only contained lay bets.
+        is_back = pd.Series(False, index=bets_data.index)
+    bets_data["real_odds"] = np.where(
+        is_back,
+        (bets_data["odds"] - 1) * BOOKMAKER_MARGIN_FACTOR + 1,
+        (1 / (bets_data["odds"] - 1)) * BOOKMAKER_MARGIN_FACTOR + 1,
+    )
 
     if finished:
-        bets_data["cote_pred"] = np.where(
+        # Base condition built for lay bets: the wager resolves favorably
+        # (you effectively backed the opponent of the laid player).
+        base_cond = (
             (bets_data["match_settled"] == 1) & (bets_data["bet"] == 1)
-            | (bets_data["match_settled"] == 2) & (bets_data["bet"] == 0),
+        ) | ((bets_data["match_settled"] == 2) & (bets_data["bet"] == 0))
+        # Back bets are the mirror of lay bets: the wager wins when the player
+        # actually backed wins, i.e. the opposite outcome of the lay condition.
+        bet_won = np.where(is_back, ~base_cond, base_cond)
+        bets_data["cote_pred"] = np.where(
+            bet_won,
             bets_data["winner_pred"],
             bets_data["loser_pred"],
         )
         bets_data["player_bet"] = np.where(
-            (bets_data["match_settled"] == 1) & (bets_data["bet"] == 1)
-            | (bets_data["match_settled"] == 2) & (bets_data["bet"] == 0),
+            bet_won,
             bets_data["winner_name"],
             bets_data["loser_name"],
         )
-        bets_data["win"] = np.where(
-            (bets_data["match_settled"] == 1) & (bets_data["bet"] == 1)
-            | (bets_data["match_settled"] == 2) & (bets_data["bet"] == 0),
-            1,
-            0,
-        )
+        bets_data["win"] = np.where(bet_won, 1, 0)
         bets_data["net_gain"] = np.where(
             bets_data["win"] == 1,
             bets_data["real_odds"] * bets_data["stake"] - bets_data["stake"],
@@ -275,23 +291,26 @@ def _prepare_bets_data_cached(user_id: int, finished: bool):
         )
         bets_data["net_unit"] = bets_data["net_gain"] / bets_data["stake"]
         bets_data["is_ratio_odds"] = np.where(
-            (bets_data["match_settled"] == 1) & (bets_data["bet"] == 1)
-            | (bets_data["match_settled"] == 2) & (bets_data["bet"] == 0),
+            bet_won,
             bets_data["is_ratio_odds_W"],
             bets_data["is_ratio_odds_L"],
         )
     else:
+        # Same mirroring for in-play bets: a back wager points to the opposite
+        # selection compared to the lay encoding.
+        base_sel = bets_data["bet"] == 1
+        bet_sel = np.where(is_back, ~base_sel, base_sel)
         bets_data["cote_pred"] = np.where(
-            bets_data["bet"] == 1, bets_data["winner_pred"], bets_data["loser_pred"]
+            bet_sel, bets_data["winner_pred"], bets_data["loser_pred"]
         )
         bets_data["player_bet"] = np.where(
-            bets_data["bet"] == 1, bets_data["winner_name"], bets_data["loser_name"]
+            bet_sel, bets_data["winner_name"], bets_data["loser_name"]
         )
         bets_data["net_gain"] = 0.0
         bets_data["net_unit"] = 0.0
         bets_data["score"] = ""
         bets_data["is_ratio_odds"] = np.where(
-            bets_data["bet"] == 1,
+            bet_sel,
             bets_data["is_ratio_odds_W"],
             bets_data["is_ratio_odds_L"],
         )

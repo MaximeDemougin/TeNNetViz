@@ -14,7 +14,8 @@ MAX_PRED_BETABLE = float(os.getenv("TENNETVIZ_MAX_PRED", "4"))
 MIN_PRED_BETABLE = float(os.getenv("TENNETVIZ_MIN_PRED", "1.1"))
 
 # --- Bookmaker margin adjustment ---
-# real_odds = (1 / (odds - 1)) * BOOKMAKER_MARGIN_FACTOR + 1
+# Lay bets:  real_odds = (1 / (odds - 1)) * BOOKMAKER_MARGIN_FACTOR + 1
+# Back bets: real_odds = (odds - 1) * BOOKMAKER_MARGIN_FACTOR + 1
 # 0.97 corresponds to ~3% vigorish removal.
 BOOKMAKER_MARGIN_FACTOR = float(os.getenv("TENNETVIZ_BOOKMAKER_MARGIN", "0.97"))
 
