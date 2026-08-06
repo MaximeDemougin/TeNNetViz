@@ -62,6 +62,13 @@ bets_en_cours = st.Page(
     "pages/bets_en_cours.py", title="Paris en cours", icon=":material/sports_tennis:"
 )
 
+# Temps reel : la liste des matchs en cours, et le detail d'un match.
+# Les deux figurent dans la navigation : `pages/match.py` porte son PROPRE
+# selecteur de match et lit `st.query_params["event_id"]` -- ce n'est pas
+# une page qu'on n'atteindrait que depuis la liste.
+live_page = st.Page("pages/live.py", title="En direct", icon=":material/sensors:")
+match_page = st.Page("pages/match.py", title="Match", icon=":material/timeline:")
+
 # New page: future matches
 future_matchs_page = st.Page(
     "pages/future_matchs.py", title="Matchs à venir", icon=":material/calendar_today:"
@@ -135,6 +142,8 @@ if st.session_state.logged_in:
                     title=f"Paris en cours 🟢{total_inplay}",
                     icon=":material/sports_tennis:",
                 ),
+                live_page,
+                match_page,
             ],
             "Analyse": [
                 calibration_page,
