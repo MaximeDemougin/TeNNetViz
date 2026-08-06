@@ -213,6 +213,43 @@ def _prepare_bets_data_cached(user_id: int, finished: bool):
     else:
         bets_data = load_inplay_bets(user_id)
 
+    # Un ordre de mise NULLE est un ordre pose et JAMAIS APPARIE : aucune
+    # contrepartie ne l'a pris, rien n'a ete joue, rien n'a ete gagne ni
+    # perdu. La donnee n'est pas fausse -- elle dit correctement qu'il ne
+    # s'est rien passe. Ce tableau est un tableau de gains : un non-evenement
+    # financier n'y a pas sa place, et la moyenne des cotes ponderee par les
+    # mises n'a meme pas de sens pour lui.
+    #
+    # `weighted_avg` plus bas retombe sur la moyenne simple quand la somme
+    # des poids est nulle -- ce garde-fou reste, il empeche la page de
+    # TOMBER. Mais il fait AFFICHER la ligne, avec une cote qui ne pese sur
+    # rien. Le filtre la retire.
+    #
+    # Le predicat est `> 0` et non `!= 0` : il ecarte du meme geste la mise
+    # nulle, la mise ABSENTE (`NaN > 0` est faux) et la mise negative, qui
+    # n'existe pas et n'aurait aucun sens.
+    #
+    # PLACE AVANT la garde de vacuite ci-dessous, et ce n'est pas cosmetique.
+    # Un utilisateur dont TOUS les ordres seraient a mise nulle passerait
+    # cette garde (`bets_data` n'est pas vide) puis deviendrait vide APRES
+    # le filtre. Plus bas, `prepared_bets["Score"].apply(_score_is_void)` sur
+    # une Series vide rend un dtype `float64` -- pandas ne peut pas deviner
+    # `bool` sans element -- et `prepared_bets[~prepared_bets["voided"]]`
+    # degenere alors en un DataFrame (0, 0) SANS COLONNES, pandas lisant le
+    # masque non booleen comme une selection de colonnes : `KeyError:
+    # 'ID_MATCH'` au `groupby` suivant. En filtrant d'abord, ce cas retombe
+    # sur le meme repli propre qu'un utilisateur sans aucun pari -- ce qu'il
+    # est, exactement : quelqu'un dont rien n'a jamais ete joue.
+    if bets_data is not None and "stake" in bets_data.columns:
+        joues = bets_data["stake"] > 0
+        n_ecartes = int((~joues).sum())
+        if n_ecartes:
+            logger.info(
+                f"{n_ecartes} pari(s) ecarte(s) du tableau de bord : mise nulle "
+                f"ou absente, donc ordre jamais apparie"
+            )
+        bets_data = bets_data[joues].reset_index(drop=True)
+
     # Defensive: if no data returned, provide an empty dataframe with expected schema
     if bets_data is None or bets_data.empty:
         cols = [
