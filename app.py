@@ -62,10 +62,12 @@ bets_en_cours = st.Page(
     "pages/bets_en_cours.py", title="Paris en cours", icon=":material/sports_tennis:"
 )
 
-# Temps reel : la liste des matchs en cours, et le detail d'un match.
-# Les deux figurent dans la navigation : `pages/match.py` porte son PROPRE
-# selecteur de match et lit `st.query_params["event_id"]` -- ce n'est pas
-# une page qu'on n'atteindrait que depuis la liste.
+# Deux pages, deux horizons. « En direct » porte l'INSTANT : les matchs en
+# cours et l'etat des capteurs. « Match » porte le PASSE -- le bilan de
+# collecte et les matchs deja joues -- et le detail d'un match n'y est que
+# le second niveau. Les deux figurent dans la navigation : `pages/match.py`
+# porte sa propre liste et lit `st.query_params["event_id"]`, ce n'est pas
+# une page qu'on n'atteindrait que depuis ailleurs.
 live_page = st.Page("pages/live.py", title="En direct", icon=":material/sensors:")
 match_page = st.Page("pages/match.py", title="Match", icon=":material/timeline:")
 

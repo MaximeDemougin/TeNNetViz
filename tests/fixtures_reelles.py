@@ -325,6 +325,22 @@ LIGNES_REELLES_MATCHS = [
      "start_ts": 1786006800, "matched": 0, "ambiguous_market": 0},
 ]
 
+# UNE SEPTIEME ligne REELLE de live_matches (id 91), tenue A PART des six
+# ci-dessus : elle porte une CINQUIEME ligue (`W15 Savitaipale`, 27 lignes
+# dans la table) et une journee (2026-07-29) qu'aucune des six n'a. C'est
+# exactement ce qu'il faut pour prouver qu'une valeur de filtre vient des
+# DONNEES et non d'une liste ecrite dans le code : on l'ajoute au jeu, la
+# ligue et le jour doivent apparaitre dans les choix. Une liste en dur ne
+# bougerait pas.
+LIGNE_REELLE_MATCH_AUTRE_LIGUE = {
+    "id": 91, "day": date(2026, 7, 29), "event_id": "3783658",
+    "match_id": "14316-80678-17188-4", "id_market": None, "ID_MATCH": None,
+    "participant1": "Valentini Grammatikopoulou",
+    "participant2": "Cara Korhonen", "p1_is_home": None,
+    "league": "W15 Savitaipale", "tour_type": "wta",
+    "start_ts": 1785308400, "matched": 0, "ambiguous_market": 0,
+}
+
 # Lignes REELLES de TeNNet_test.live_points, pour les DEUX `event_id` du
 # meme match (11517-24721-21346-4, cf. ci-dessus) : c'est ce couple qui
 # discrimine un lecteur mono-identifiant. Les `recv_ts` sont conserves a la

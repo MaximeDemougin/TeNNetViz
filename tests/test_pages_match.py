@@ -9,20 +9,57 @@ import types
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 
+from fixtures_reelles import (
+    LIGNE_REELLE_MATCH_AUTRE_LIGUE,
+    LIGNES_REELLES_MATCHS,
+    LIGNES_REELLES_QA,
+)
 
 
-def _mock_lecteur(monkeypatch, matchs_df, serie_df):
-    """pages/match.py lit successivement live_now (charger_matchs) et
-    live_series (charger_serie) via le MEME lecteur par defaut : on
-    distingue les deux par la table nommee dans la requete, comme le ferait
-    une vraie base."""
+#: Les CINQ tables que la page lit, chacune sous son nom. Le bouchon les
+#: distingue par le nom present dans la requete, comme le ferait une vraie
+#: base -- servir le meme tableau a toutes ferait passer une requete pour
+#: une autre sans que rien ne le signale (une liste de matchs relue comme un
+#: bilan de collecte, par exemple).
+TABLES = ("live_now", "live_series", "live_qa_daily", "live_matches",
+          "live_points")
+
+
+def _mock_tables(monkeypatch, **tables):
+    """Un lecteur bouchonne qui rend, pour chaque table, le tableau donne.
+
+    Une table non fournie rend un tableau VIDE : c'est le cas « la page lit
+    une table dont ce test ne parle pas », et il ne doit pas se traduire par
+    des donnees d'une autre table.
+    """
+    inconnues = set(tables) - set(TABLES)
+    assert not inconnues, f"table inconnue dans le bouchon : {inconnues}"
+
     def lire(schema, query):
-        return serie_df if "live_series" in query else matchs_df
+        for nom in TABLES:
+            if nom in query:
+                df = tables.get(nom)
+                return pd.DataFrame() if df is None else df
+        raise AssertionError(f"requete sur une table non bouchonnee : {query}")
 
     faux = types.ModuleType("db_utils.db_utils")
     faux.read_sql_query = lire
     monkeypatch.setitem(sys.modules, "db_utils", types.ModuleType("db_utils"))
     monkeypatch.setitem(sys.modules, "db_utils.db_utils", faux)
+
+
+def _mock_lecteur(monkeypatch, matchs_df, serie_df):
+    """Le direct seul : live_now et live_series, les autres tables vides."""
+    _mock_tables(monkeypatch, live_now=matchs_df, live_series=serie_df)
+
+
+def _page(monkeypatch, **tables):
+    """La page, bouchonnee et connectee, PAS encore executee."""
+    _mock_tables(monkeypatch, **tables)
+    at = AppTest.from_file("pages/match.py", default_timeout=30)
+    at.session_state["logged_in"] = True
+    at.session_state["ID_USER"] = 1
+    return at
 
 
 
@@ -125,79 +162,181 @@ def test_le_tableau_point_par_point_affiche_une_date_pas_des_secondes_epoch(monk
     assert "1785794036" not in rendu, f"epoch brut encore visible : {rendu!r}"
 
 
-# --- La page detail sans parametre : elle CHOISIT, elle ne renvoie pas ---
+# ══════════════════════════════════════════════════════════════════════
+# NIVEAU 1 : le bilan de collecte, puis la liste filtrable des matchs
+# ══════════════════════════════════════════════════════════════════════
 #
-# Constate a l'usage : « Match » est inscrite au menu lateral (app.py), donc on
-# y arrive sans passer par la liste et sans `event_id` dans l'URL. La page
-# repondait « revenez a la page En direct », ce qui faisait de l'entree de menu
-# une impasse. Elle propose desormais les matchs publies.
+# « Match » est inscrite au menu lateral (app.py), donc on y arrive sans
+# passer par une liste et sans `event_id` dans l'URL. Elle ouvrait alors un
+# selecteur des matchs du DIRECT ; elle porte desormais le passe -- le bilan
+# de collecte et les matchs deja joues -- et le detail n'en est que le
+# second niveau (design du 2026-08-07, §5).
+
+BILAN_REEL = pd.DataFrame(LIGNES_REELLES_QA)
+PASSES_REELS = pd.DataFrame(LIGNES_REELLES_MATCHS)
 
 
-def _sans_parametre(monkeypatch, matchs_df):
-    _mock_lecteur(monkeypatch, matchs_df, pd.DataFrame())
-    at = AppTest.from_file("pages/match.py", default_timeout=30)
-    at.session_state["logged_in"] = True
-    at.session_state["ID_USER"] = 1
+def _niveau_1(monkeypatch, matchs=None, bilan=None):
+    """La page sans `event_id` : bilan et liste, sur donnees REELLES."""
+    at = _page(
+        monkeypatch,
+        live_qa_daily=BILAN_REEL if bilan is None else bilan,
+        live_matches=PASSES_REELS if matchs is None else matchs,
+    )
     at.run()
+    assert not at.exception, at.exception
     return at
 
 
-def test_sans_parametre_la_page_propose_les_matchs_publies(monkeypatch):
-    matchs_df = pd.DataFrame([
-        {"event_id": "fini-1", "status": "Finished", "participant1": "C",
-         "participant2": "D", "score": "6-4,6-3", "updated_ts": time.time()},
-        {"event_id": "vif-1", "status": "InPlay", "participant1": "A",
-         "participant2": "B", "score": "3-2", "updated_ts": time.time()},
-    ])
-    at = _sans_parametre(monkeypatch, matchs_df)
+def liste_des_matchs(at):
+    """Le tableau de la LISTE, reconnu par une colonne qui n'est qu'a lui.
 
+    Le bilan de collecte porte lui aussi une colonne « Jour » : reperer la
+    liste par sa position casserait au premier tableau ajoute au-dessus.
+    """
+    for d in at.dataframe:
+        if "Ligue" in d.value.columns:
+            return d.value
+    return None
+
+
+def _captions(at):
+    return [str(c.value) for c in at.caption]
+
+
+def test_le_bilan_de_collecte_est_CABLE_dans_la_page(monkeypatch):
+    """`bilan_collecte.afficher` existait et n'etait appele par AUCUNE page :
+    les trois seuils continuaient donc de sonner en silence. Ce test protege
+    le CABLAGE, pas le rendu (teste ailleurs)."""
+    at = _niveau_1(monkeypatch)
+    assert any("Santé de la collecte" in str(s.value) for s in at.subheader), \
+        [str(s.value) for s in at.subheader]
+    par_label = {m.label: m.value for m in at.metric}
+    appariement = [v for k, v in par_label.items() if "Appariement" in k]
+    assert appariement == ["65,3 %"], par_label
+
+
+def test_les_circuits_proposes_sont_ceux_des_DONNEES(monkeypatch):
+    """Une liste de circuits ecrite dans le code serait fausse le jour ou un
+    troisieme apparait -- et personne ne le verrait.
+
+    La preuve tient dans le second cas : un jeu ou seul le WTA a joue ne doit
+    proposer QUE `wta`. Une liste en dur y proposerait `atp` sans qu'aucune
+    ligne ne le porte.
+    """
+    at = _niveau_1(monkeypatch)
+    assert list(at.multiselect("filtre_circuit").options) == ["atp", "wta"]
+
+    wta_seul = PASSES_REELS[PASSES_REELS["tour_type"] == "wta"]
+    at2 = _niveau_1(monkeypatch, matchs=wta_seul)
+    assert list(at2.multiselect("filtre_circuit").options) == ["wta"]
+
+
+def test_ajouter_une_ligue_aux_donnees_la_fait_apparaitre_dans_les_choix(monkeypatch):
+    at = _niveau_1(monkeypatch)
+    avant = list(at.multiselect("filtre_ligue").options)
+    assert "W15 Savitaipale" not in avant, avant
+
+    plus = pd.DataFrame(LIGNES_REELLES_MATCHS + [LIGNE_REELLE_MATCH_AUTRE_LIGUE])
+    at2 = _niveau_1(monkeypatch, matchs=plus)
+    apres = list(at2.multiselect("filtre_ligue").options)
+    assert set(apres) - set(avant) == {"W15 Savitaipale"}, apres
+    # La ligne ajoutee porte AUSSI un jour qu'aucune autre n'a : le filtre de
+    # jour se tire des memes donnees, pas d'un calendrier.
+    jours = list(at2.multiselect("filtre_jour").options)
+    assert "2026-07-29" in jours, jours
+    # Le plus recent d'abord : c'est celui qu'on vient regarder.
+    assert jours[0] == "2026-08-06", jours
+
+
+def test_filtrer_sur_un_circuit_ne_laisse_que_lui(monkeypatch):
+    at = _niveau_1(monkeypatch)
+    assert len(liste_des_matchs(at)) == 6
+
+    at.multiselect("filtre_circuit").select("wta")
+    at.run()
+    assert not at.exception, at.exception
+
+    table = liste_des_matchs(at)
+    assert set(table["Circuit"]) == {"wta"}, table.to_dict("records")
+    # Les deux lignes de Sabalenka (un match a cheval sur deux journees), et
+    # AUCUNE des quatre lignes ATP.
+    assert len(table) == 2, table.to_dict("records")
+    assert all("Sabalenka" in m for m in table["Match"]), table["Match"].tolist()
+    # Le taux affiche suit ce qui est AFFICHE : sur ces deux lignes il vaut
+    # 100 %, pas les 66,7 % de la liste entiere.
+    taux = [t for t in _captions(at) if "matchs identifiés" in t]
+    assert taux and "2 sur 2" in taux[0], _captions(at)
+
+
+def test_filtrer_sur_les_non_apparies_ne_laisse_que_ceux_la(monkeypatch):
+    at = _niveau_1(monkeypatch)
+    at.radio("filtre_appariement").set_value("Non appariés")
+    at.run()
+    assert not at.exception, at.exception
+
+    table = liste_des_matchs(at)
+    assert set(table["Apparié"]) == {"non"}, table.to_dict("records")
+    assert len(table) == 2, table.to_dict("records")
+    # 3799286 (un des deux identifiants du match Duckworth) et 3807294, les
+    # seules lignes a `matched = 0` du prelevement.
+    assert set(table["Identifiants"]) == {"3799286", "3807294"}, \
+        table["Identifiants"].tolist()
+
+
+def test_le_taux_de_la_liste_n_est_PAS_celui_du_bilan(monkeypatch):
+    """Deux taux d'appariement circulent, avec DEUX denominateurs (§4 du
+    design), et les melanger produirait un chiffre qui ne veut rien dire.
+
+    - le bilan : 65,3 % des MARCHES vus en jeu, hors ambigus ;
+    - la liste : 4 sur 6 MATCHS identifies (416/1 153 sur la table entiere).
+
+    Chacun doit s'afficher avec son denominateur, et aucun ne doit prendre
+    la place de l'autre.
+    """
+    at = _niveau_1(monkeypatch)
+    taux = [t for t in _captions(at) if "matchs identifiés" in t]
+    assert taux, _captions(at)
+    texte = taux[0]
+    # Le compte COLLE a son denominateur. « 4 sur 6 » suivi de n'importe
+    # quel autre denominateur serait un chiffre faux : c'est exactement la
+    # confusion que ce test existe pour interdire, et la separer du reste de
+    # la phrase la laisserait passer (mutation constatee survivante).
+    assert "4 sur 6 matchs identifiés" in texte, texte
+    assert "66,7 %" in texte, texte
+    # Le taux du BILAN n'a rien a faire ici : ni sa valeur, ni son
+    # denominateur seul.
+    assert "65,3" not in texte, texte
+    # Et le texte nomme la difference, sans quoi le lecteur croirait a une
+    # incoherence entre deux chiffres de la meme page.
+    assert "marchés vus en jeu" in texte, texte
+
+    # Le bilan, lui, garde SA valeur et SON denominateur.
+    par_label = {m.label: m.value for m in at.metric}
+    assert [v for k, v in par_label.items() if "Appariement" in k] == ["65,3 %"]
+
+
+def test_la_liste_ne_dit_jamais_nan(monkeypatch):
+    """Meme piege que partout ici : NaN est vrai au sens booleen, donc
+    `valeur or defaut` l'ecrirait litteralement « nan » -- dans le tableau
+    comme dans la liste deroulante ou l'utilisateur choisit."""
+    troue = dict(LIGNES_REELLES_MATCHS[0])
+    troue.update({"participant2": float("nan"), "league": float("nan"),
+                  "start_ts": float("nan")})
+    at = _niveau_1(monkeypatch, matchs=pd.DataFrame([troue]))
+
+    table = liste_des_matchs(at)
+    assert "nan" not in table.to_string().lower(), table.to_dict("records")
+    etiquettes = list(at.selectbox("choix_match_passe").options)
+    assert not any("nan" in e.lower() for e in etiquettes), etiquettes
+
+
+def test_sans_aucun_match_collecte_la_page_le_dit_sans_trace(monkeypatch):
+    at = _page(monkeypatch)
+    at.run()
     assert not at.exception
-    assert len(at.selectbox) >= 1, "aucun selecteur de match"
-    choix = [s for s in at.selectbox if s.label == "Choisir un match"]
-    assert choix, [s.label for s in at.selectbox]
-    # AppTest expose les libelles FORMATES, pas les valeurs sous-jacentes.
-    options = list(choix[0].options)
-    assert len(options) == 2, options
-    assert any("A vs B" in o for o in options), options
-    assert any("C vs D" in o for o in options), options
-    # Les matchs EN COURS d'abord : c'est ce qu'on vient regarder. Sans ce
-    # tri, l'option preselectionnee serait un match TERMINE.
-    assert "A vs B" in options[0], options
-    # Le libelle porte le score et le statut : sans eux, deux rencontres des
-    # memes joueurs seraient indiscernables dans la liste deroulante.
-    assert "3-2" in options[0] and "InPlay" in options[0], options[0]
-    # Et surtout : plus de renvoi vers une autre page.
     textes = [str(i.value) for i in at.info]
-    assert not any("En direct" in t for t in textes), textes
-
-
-def test_l_etiquette_du_selecteur_ne_dit_jamais_nan(monkeypatch):
-    """Meme piege que le reste de la page : NaN est vrai au sens booleen,
-    donc `valeur or defaut` l'ecrirait litteralement « nan » dans la liste
-    deroulante -- la ou l'utilisateur choisit."""
-    matchs_df = pd.DataFrame([{
-        "event_id": "evt-nan", "status": float("nan"), "participant1": "A",
-        "participant2": float("nan"), "score": float("nan"),
-        "updated_ts": time.time(),
-    }])
-    at = _sans_parametre(monkeypatch, matchs_df)
-
-    assert not at.exception
-    etiquette = list(at.selectbox[0].options)[0]
-    assert "nan" not in etiquette.lower(), etiquette
-    # participant2, score et status sont NaN : le libelle se degrade sans
-    # jamais ecrire le mot, et sans parenthese de statut vide.
-    assert etiquette == "A vs ?", etiquette
-
-
-def test_sans_parametre_et_sans_match_publie_aucune_trace_python(monkeypatch):
-    at = _sans_parametre(monkeypatch, pd.DataFrame())
-    assert not at.exception
-    assert not at.selectbox or all(
-        s.label != "Choisir un match" for s in at.selectbox
-    )
-    assert any("Aucun match publie" in str(i.value) for i in at.info), \
-        [str(i.value) for i in at.info]
+    assert any("Aucun match collecté" in t for t in textes), textes
 
 
 def test_sans_parametre_base_injoignable_affiche_un_message_pas_la_trace(monkeypatch):
