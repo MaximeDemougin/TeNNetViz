@@ -12,6 +12,7 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 import pandas as pd
 
@@ -932,6 +933,174 @@ def charger_points(event_id, lecteur=None) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
     return df
+
+
+# ── Les seuils de sante de la COLLECTE ────────────────────────────────
+#
+# VALEURS REPRISES, PAS RE-DERIVEES : identiques, deliberement, a
+# ``QA_MIN_MATCH_RATE``, ``QA_MIN_PBP_COHERENCE`` et ``QA_MAX_GAP_RATIO``
+# definis dans ``Live/config.py`` du DEPOT TeNNetPy (le PoC de collecte --
+# chemin absolu typique sur cette machine : ``/home/ubuntu/TeNNetPy/Live/
+# config.py``, lignes 768-770 au prelevement du 2026-08-07). C'est
+# ``Live/qa_report.py`` qui les applique la-bas, sur les memes trois
+# metriques, ecrites chaque nuit dans ``live_qa_daily`` -- la table que
+# cette page lit. Reprendre ces nombres plutot que d'en inventer d'autres
+# est la seule facon que la page dise « hors seuil » au meme moment que le
+# PoC.
+#
+# RISQUE DE DERIVE SILENCIEUSE : si l'un de ces trois change un jour cote
+# TeNNetPy, RIEN ici ne le detecte automatiquement -- TeNNetViz est un depot
+# separe qui ne l'importe pas (il ne lit que les TABLES que ce depot ecrit,
+# jamais son code). Quiconque modifie ces constantes la-bas doit penser a
+# revenir ici. A defaut d'un lien automatique entre les deux depots, ce
+# commentaire et ``test_les_trois_seuils_sont_epingles_sur_ceux_du_poc``
+# sont les seuls reperes. Meme convention que
+# ``SEUIL_BATTEMENT_ARRETE_S`` plus haut, pour la meme raison.
+#
+# LE SENS N'EST PAS LE MEME POUR LES TROIS, et c'est le piege principal :
+# les deux premiers sont des MINIMA (en dessous = mauvais), le troisieme un
+# MAXIMUM (au-dessus = mauvais). Le sens est porte par ``INDICATEURS_QA``
+# ci-dessous, pas par une suite de comparaisons ecrites a la main, pour
+# qu'il se relise d'un coup d'oeil.
+SEUIL_QA_MATCH_RATE_MIN = 0.90
+SEUIL_QA_PBP_COHERENCE_MIN = 0.95
+SEUIL_QA_GAP_RATIO_MAX = 0.05
+
+
+class IndicateurQA(NamedTuple):
+    """Un indicateur du bilan : son seuil, son SENS, et ce qu'il compte."""
+
+    seuil: float
+    #: "min" -> en dessous du seuil c'est mauvais ; "max" -> au-dessus.
+    sens: str
+    libelle: str
+    #: Le DENOMINATEUR, affiche avec le taux. Deux taux d'appariement
+    #: circulent dans cette page et ne comptent pas la meme chose (§4 du
+    #: design) : sans son denominateur, un pourcentage ne veut rien dire.
+    denominateur: str
+
+
+INDICATEURS_QA = {
+    "match_rate": IndicateurQA(
+        SEUIL_QA_MATCH_RATE_MIN, "min", "Appariement",
+        "des marchés vus en jeu, hors appariements ambigus",
+    ),
+    "pbp_coherence": IndicateurQA(
+        SEUIL_QA_PBP_COHERENCE_MIN, "min", "Cohérence du point par point",
+        "des jeux communs au direct et au pbp",
+    ),
+    "gap_ratio": IndicateurQA(
+        SEUIL_QA_GAP_RATIO_MAX, "max", "Trou de collecte",
+        "du temps in-play passé sans aucune trame",
+    ),
+}
+
+#: Les trois verdicts possibles. « Pas de mesure » est un etat A PART
+#: ENTIERE, ni conforme ni hors seuil : c'est tout l'objet du piege du
+#: denominateur nul.
+SANS_MESURE = "sans_mesure"
+CONFORME = "conforme"
+HORS_SEUIL = "hors_seuil"
+
+
+def juger_qa(indicateur: str, valeur) -> str:
+    """Confronte UNE valeur du bilan a SON seuil, dans SON sens.
+
+    Rend ``SANS_MESURE`` quand la valeur est absente -- et c'est le point
+    important. Quatre journees (28 au 31 juillet 2026) n'ont vu aucun
+    marche in-play : leur ``match_rate`` est NULL en base, relu en NaN.
+    NaN echoue TOUTES les comparaisons (il n'est ni inferieur ni superieur
+    a quoi que ce soit), donc un jugement naif les declarerait conformes ;
+    les convertir en zero les declarerait catastrophiques. Les deux mentent,
+    et le second est le pire : quatre journees a « 0 % de sante » noieraient
+    l'information vraie des journees mesurees.
+
+    Le PoC refuse deja cette division a la source (``Live/qa_report.py::
+    _ratio`` : "une journee creuse n'est pas un echec de collecte") ; on ne
+    la reintroduit pas de ce cote-ci.
+
+    DIVERGENCE ASSUMEE avec ``Live/qa_report.py::evaluate``, qui compte une
+    metrique absente comme un ECHEC : la-bas c'est une porte de cloture (on
+    ne declare pas conforme ce qu'on n'a pas su mesurer), ici c'est un
+    AFFICHAGE. Un tableau de bord qui peint en rouge ce qu'il n'a pas
+    mesure apprend a son lecteur a ignorer le rouge -- exactement le mode
+    de panne que ce depot combat ailleurs (les pastilles de fraicheur).
+
+    Le sens, lui, est repris tel quel : ``<`` pour un minimum, ``>`` pour un
+    maximum, donc l'EGALITE est conforme des deux cotes, comme cote PoC.
+    """
+    if indicateur not in INDICATEURS_QA:
+        # Pas de defaut : un indicateur sans seuil connu ne doit pas se
+        # juger « conforme » par accident. Meme regle que `fraicheur`, qui
+        # exige un seuil explicite -- un silence vert est le mode de panne
+        # que ce depot combat.
+        raise KeyError(
+            f"indicateur de bilan inconnu : {indicateur!r} "
+            f"(connus : {', '.join(sorted(INDICATEURS_QA))})"
+        )
+    spec = INDICATEURS_QA[indicateur]
+    if valeur is None or pd.isna(valeur):
+        return SANS_MESURE
+    valeur = float(valeur)
+    if spec.sens == "min":
+        return HORS_SEUIL if valeur < spec.seuil else CONFORME
+    return HORS_SEUIL if valeur > spec.seuil else CONFORME
+
+
+def tendance_qa(indicateur: str, valeurs) -> str:
+    """« amelioration », « degradation », « stable » ou « inconnue ».
+
+    Compare la derniere valeur MESUREE a la precedente valeur mesuree, en
+    sautant les absences : comparer une mesure a une absence ne dit rien.
+
+    Le SENS compte ici autant que pour le seuil, et a l'envers d'un
+    indicateur a l'autre. Le fait que la table portait sans que personne le
+    releve : ``gap_ratio`` passe de 97,21 % (3 aout) a 62,53 % (4 aout) --
+    une BAISSE, donc une amelioration, la fenetre exacte de la correction
+    d'authentification. Lue avec le sens d'un minimum, cette meme baisse
+    s'afficherait en degradation : la page annoncerait une panne le jour
+    d'une reparation.
+
+    « inconnue » quand il n'y a pas deux mesures a comparer -- et surtout
+    pas « stable », qui se lirait comme une mesure.
+    """
+    spec = INDICATEURS_QA[indicateur] if indicateur in INDICATEURS_QA else None
+    if spec is None:
+        raise KeyError(f"indicateur de bilan inconnu : {indicateur!r}")
+    mesurees = [
+        float(v) for v in list(valeurs)
+        if not (v is None or pd.isna(v))
+    ]
+    if len(mesurees) < 2:
+        return "inconnue"
+    avant, apres = mesurees[-2], mesurees[-1]
+    if apres == avant:
+        return "stable"
+    monte = apres > avant
+    ameliore = monte if spec.sens == "min" else not monte
+    return "amelioration" if ameliore else "degradation"
+
+
+def bilan_juge(df: pd.DataFrame) -> pd.DataFrame:
+    """Le bilan, augmente d'une colonne ``verdict_<indicateur>`` par
+    indicateur.
+
+    Le jugement s'AJOUTE : les valeurs brutes restent, pour que le rendu
+    affiche le chiffre a cote du verdict -- un verdict sans son chiffre ne
+    se verifie pas. Copie, jamais mutation en place : le meme tableau est
+    relu ailleurs dans la page.
+
+    Un indicateur absent de la table (schema plus ancien, colonne renommee
+    cote PoC) rend ``SANS_MESURE`` plutot que de lever : la page doit rester
+    debout et le dire, pas tomber.
+    """
+    if df is None or df.empty:
+        return pd.DataFrame()
+    juge = df.copy()
+    for nom in INDICATEURS_QA:
+        valeurs = juge[nom] if nom in juge.columns else [None] * len(juge)
+        juge[f"verdict_{nom}"] = [juger_qa(nom, v) for v in valeurs]
+    return juge
 
 
 def serie_longue(df: pd.DataFrame) -> pd.DataFrame:
