@@ -727,6 +727,56 @@ def charger_matchs(lecteur=None) -> pd.DataFrame:
     return df
 
 
+def _identifiants_surs(event_id) -> list:
+    """Les ``event_id`` demandes, nettoyes de tout ce qui sort d'un litteral.
+
+    ``event_id`` vient de ``st.query_params`` cote page : modifiable par
+    n'importe qui dans l'URL. On ne parametre pas la requete (pas d'API de
+    parametres bindes exposee par ``read_sql_query``) ; retirer TOUTES les
+    apostrophes empeche toute evasion du litteral SQL entre quotes -- c'est
+    cette propriete, pas un simple nettoyage cosmetique, qui rend la ligne
+    sure.
+
+    Un event_id finissant par un antislash echapperait la quote fermante
+    (`'...\\'  ORDER BY...`) : ce n'est pas une porte d'injection (le
+    litteral ne se referme jamais, la requete est juste invalide), mais
+    l'erreur SQL qui en resulte remonterait comme "Base de donnees
+    injoignable", un message qui pointerait vers la mauvaise cause. Retirer
+    aussi les antislashs le rend impossible.
+
+    UNE SEULE implementation, partagee par ``charger_serie`` et
+    ``charger_points`` : ce depot tient deja qu'ecrire deux fois la meme
+    regle garantit qu'une correction n'atterrisse que d'un cote (voir
+    ``detail_match``, partage entre les deux pages). Pour une regle de
+    SECURITE, le cote oublie serait celui qu'on ne verrait jamais.
+
+    Accepte plusieurs identifiants -- separes par des virgules ou donnes en
+    liste -- parce que la source attribue parfois deux ou trois ``event_id``
+    a une meme rencontre. Rend une liste VIDE quand rien d'exploitable ne
+    reste : c'est a l'appelant de ne pas interroger la base plutot que
+    d'envoyer un ``IN ()``, qui est une erreur de syntaxe MySQL.
+    """
+    if event_id is None:
+        return []
+    bruts = event_id if isinstance(event_id, (list, tuple, set)) else \
+        str(event_id).split(",")
+    surs = [
+        str(e).replace("'", "").replace("\\", "").strip()
+        for e in bruts
+    ]
+    return [e for e in surs if e]
+
+
+def _litteral_liste(valeurs) -> str:
+    """La liste d'un ``IN (...)``, chaque valeur entre quotes.
+
+    N'echappe RIEN : elle suppose ses entrees deja passees par
+    ``_identifiants_surs``. Separee pour que les deux lecteurs produisent le
+    meme texte, pas pour ajouter une garantie.
+    """
+    return ", ".join(f"'{v}'" for v in valeurs)
+
+
 def charger_serie(event_id, lecteur=None) -> pd.DataFrame:
     """La serie d'un match, dans l'ordre du temps.
 
@@ -749,31 +799,14 @@ def charger_serie(event_id, lecteur=None) -> pd.DataFrame:
     ce fichier.
     """
     lire = lecteur if lecteur is not None else _lecteur_par_defaut()
-    # event_id vient de st.query_params cote page : modifiable par n'importe
-    # qui dans l'URL. On ne parametre pas la requete (pas d'API de parametres
-    # bindes exposee par read_sql_query) ; retirer TOUTES les apostrophes
-    # empeche toute evasion du litteral SQL entre quotes -- c'est cette
-    # propriete, pas un simple nettoyage cosmetique, qui rend la ligne sure.
-    # Un event_id finissant par un antislash echapperait la quote fermante
-    # (`'...\'  ORDER BY...`) : ce n'est pas une porte d'injection (le litteral
-    # ne se referme jamais, la requete est juste invalide), mais l'erreur SQL
-    # qui en resulte remonterait comme "Base de donnees injoignable", un
-    # message qui pointerait vers la mauvaise cause. Retirer aussi les
-    # antislashs le rend impossible.
-    bruts = event_id if isinstance(event_id, (list, tuple, set)) else \
-        str(event_id).split(",")
-    surs = [
-        str(e).replace("'", "").replace("\\", "").strip()
-        for e in bruts
-    ]
-    surs = [e for e in surs if e]
+    surs = _identifiants_surs(event_id)
     if not surs:
         return pd.DataFrame()
     # Le ORDER BY porte sur `ts` SEUL et non sur (event_id, ts) : les series
     # de deux identifiants d'un meme match doivent s'entrelacer dans le temps,
     # pas se suivre bout a bout -- sans quoi la courbe reviendrait en arriere
     # au milieu du graphique.
-    liste = ", ".join(f"'{e}'" for e in surs)
+    liste = _litteral_liste(surs)
     df = lire(
         SCHEMA,
         f"SELECT * FROM live_series WHERE event_id IN ({liste}) ORDER BY ts",
@@ -784,6 +817,121 @@ def charger_serie(event_id, lecteur=None) -> pd.DataFrame:
     # sans ce repliement, le tableau point par point montrerait deux lignes
     # par instant, avec des scores en desaccord jusqu'a un jeu entier.
     return fusionner_series(df)
+
+
+# ── Les tables du PASSE ───────────────────────────────────────────────
+#
+# `live_now` et `live_series` portent le direct ; `live_qa_daily`,
+# `live_matches` et `live_points` portent ce qui a ete collecte. Meme motif
+# que les deux lecteurs ci-dessus -- SCHEMA du PoC, lecteur injectable,
+# import differe -- et pour les memes raisons.
+#
+# Ces trois lecteurs ne CALCULENT rien. `Live/qa_report.py` calcule deja les
+# indicateurs de sante et les ecrit dans `live_qa_daily` : les recalculer
+# ici creerait deux verites qui divergeraient (§7 du design).
+
+
+def charger_bilan_qa(lecteur=None) -> pd.DataFrame:
+    """Le bilan quotidien de la collecte, du plus ancien au plus recent.
+
+    Une ligne par journee, ecrite chaque nuit par ``Live/qa_report.py`` cote
+    PoC. L'ordre est CHRONOLOGIQUE : c'est lui qui rend la tendance lisible
+    (le taux de trou passe de 97 % a 51 % entre le 3 et le 5 aout 2026, la
+    fenetre exacte de la correction d'authentification). Sans ``ORDER BY``,
+    MySQL ne promet aucun ordre.
+
+    Les absences restent des absences : les journees sans marche vu en jeu
+    portent ``match_rate`` a NULL, relu en NaN, et ce lecteur n'y touche
+    pas. Les convertir en zero ferait passer une journee NON MESUREE pour
+    une journee catastrophique -- c'est le piege que ``juger_qa`` refuse
+    plus bas, et qu'il ne pourrait plus voir si la conversion avait lieu
+    ici.
+
+    ``lecteur`` est injectable pour les tests ; en service il vaut
+    ``read_sql_query``. Import differe jusqu'ici (et non en tete de module),
+    meme motif que ``charger_matchs``.
+    """
+    lire = lecteur if lecteur is not None else _lecteur_par_defaut()
+    df = lire(SCHEMA, "SELECT * FROM live_qa_daily ORDER BY day")
+    if df is None or df.empty:
+        return pd.DataFrame()
+    return df
+
+
+def charger_matchs_passes(lecteur=None) -> pd.DataFrame:
+    """Les matchs identifies par la collecte, le plus recent d'abord.
+
+    Une ligne par (journee, event_id) -- pas par match : un match a cheval
+    sur deux journees en produit deux (mesure du 2026-08-07 : 1 153 lignes
+    sur 10 jours), et la source attribue parfois deux ``event_id`` a une
+    meme rencontre.
+
+    ``matched`` est rendu tel quel (0/1) et non filtre : les matchs jamais
+    vus en direct par l'exchange sont une information de la liste, pas un
+    dechet. ATTENTION -- ce taux d'appariement-la (416/1 153 au prelevement)
+    n'est PAS ``match_rate`` du bilan, qui porte sur les seuls marches vus
+    en jeu et hors ambigus ; les melanger produirait un chiffre qui ne veut
+    rien dire (§4 du design).
+
+    ``lecteur`` est injectable pour les tests ; en service il vaut
+    ``read_sql_query``. Import differe jusqu'ici, meme motif que
+    ``charger_matchs``.
+    """
+    lire = lecteur if lecteur is not None else _lecteur_par_defaut()
+    df = lire(
+        SCHEMA,
+        "SELECT * FROM live_matches ORDER BY day DESC, start_ts DESC",
+    )
+    if df is None or df.empty:
+        return pd.DataFrame()
+    return df
+
+
+def charger_points(event_id, lecteur=None) -> pd.DataFrame:
+    """Le point par point d'un match, dans l'ordre de reception.
+
+    Parametree par ``event_id`` pour ne charger que ce match : la table
+    porte 176 208 lignes au prelevement du 2026-08-07, et c'est l'index
+    (event_id) qui rend cette requete instantanee.
+
+    ``event_id`` accepte PLUSIEURS identifiants, separes par des virgules ou
+    donnes en liste, exactement comme ``charger_serie`` -- et pour la meme
+    raison, verifiee en donnees : 3799286 et 3802032 sont la meme rencontre
+    (meme ``match_id`` dans ``live_matches``) et portent respectivement 2 et
+    105 points. N'en lire qu'un rendrait la moitie du match sans le dire.
+
+    MEME PRECAUTION que ``charger_serie`` sur le litteral SQL : ``event_id``
+    vient de l'URL, il passe par ``_identifiants_surs`` avant d'entrer dans
+    la requete. Rien a lire -> aucune requete du tout : ``IN ()`` est une
+    erreur de syntaxe MySQL, qui remonterait a l'ecran comme une base
+    injoignable.
+
+    Le ORDER BY porte sur ``recv_ts`` SEUL, pas sur (event_id, recv_ts) :
+    les points des deux identifiants d'un meme match doivent s'entrelacer
+    dans le temps, pas se suivre bout a bout.
+
+    A la difference de ``charger_serie``, AUCUN repliement n'est applique :
+    ``live_series`` ecrit une ligne par cycle (donc des repetitions a etat
+    de jeu inchange), alors que ``live_points`` n'ecrit qu'au CHANGEMENT.
+    Replier ici effacerait de vrais points.
+
+    ``lecteur`` est injectable pour les tests ; en service il vaut
+    ``read_sql_query``. Import differe jusqu'ici, meme motif que
+    ``charger_matchs``.
+    """
+    lire = lecteur if lecteur is not None else _lecteur_par_defaut()
+    surs = _identifiants_surs(event_id)
+    if not surs:
+        return pd.DataFrame()
+    liste = _litteral_liste(surs)
+    df = lire(
+        SCHEMA,
+        f"SELECT * FROM live_points WHERE event_id IN ({liste}) "
+        "ORDER BY recv_ts",
+    )
+    if df is None or df.empty:
+        return pd.DataFrame()
+    return df
 
 
 def serie_longue(df: pd.DataFrame) -> pd.DataFrame:

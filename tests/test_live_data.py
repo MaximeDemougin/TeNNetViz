@@ -1,11 +1,14 @@
 """Premiers tests du depot : les fonctions qui interrogent la base et
 transforment en tableau. Ce sont elles qui peuvent mentir en silence."""
 
+from datetime import date
+
 import pandas as pd
 
 from live_data import (
     CHEMIN_BATTEMENT_PUBLIEUR,
     CHEMIN_BATTEMENT_SCORE,
+    SCHEMA,
     SEUIL_BATTEMENT_ARRETE_S,
     SEUIL_FRAICHEUR_BOOKS_FLUX_S,
     SEUIL_FRAICHEUR_BOOKS_S,
@@ -23,7 +26,10 @@ from live_data import (
     chronologie,
     ecart_en_ticks,
     probabilite_implicite,
+    charger_bilan_qa,
     charger_matchs,
+    charger_matchs_passes,
+    charger_points,
     charger_serie,
     duree_courte,
     en_datetime,
@@ -47,6 +53,9 @@ from fixtures_reelles import (
     LIGNE_REELLE_FINISHED,
     LIGNE_REELLE_INPLAY,
     LIGNE_REELLE_MI_CYCLE,
+    LIGNES_REELLES_MATCHS,
+    LIGNES_REELLES_POINTS,
+    LIGNES_REELLES_QA,
 )
 
 
@@ -1445,3 +1454,210 @@ def test_la_chronologie_illisible_rend_une_liste_vide_sans_lever():
     for mauvais in (None, "", "   ", "pas du json", "{}", "[1,2]", 42):
         assert chronologie(mauvais) == [] or all(
             isinstance(x, dict) for x in chronologie(mauvais)), mauvais
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Les trois lecteurs des tables du PASSE (bilan, matchs joues, points)
+# ══════════════════════════════════════════════════════════════════════
+#
+# Meme motif que charger_matchs()/charger_serie() : SCHEMA du PoC, lecteur
+# injectable, import differe. Le faux lecteur distingue les tables par leur
+# nom dans la requete, comme le fait deja tests/test_pages_match.py.
+
+
+def _capture(retour=None):
+    """Un faux lecteur qui retient (schema, requete) et rend `retour`."""
+    vu = {"appels": 0}
+
+    def lecteur(schema, query):
+        vu["appels"] += 1
+        vu["schema"] = schema
+        vu["query"] = query
+        return pd.DataFrame() if retour is None else retour
+
+    return vu, lecteur
+
+
+# --- Le schema interroge : TeNNet_test, JAMAIS la production ------------
+#
+# Le PoC s'interdit d'ECRIRE dans `TeNNet` (un robot en argent reel y vit) ;
+# la viz, elle, lit les deux schemas -- `TeNNet` pour les paris, ailleurs
+# dans l'application. Ces trois lecteurs-la sont ceux du PoC : ils doivent
+# viser `TeNNet_test` et rien d'autre. Une requete `live_qa_daily` envoyee
+# a `TeNNet` ne leverait pas forcement une erreur visible (table absente ->
+# « Base de donnees injoignable »), donc rien a l'ecran ne le dirait.
+
+
+def test_les_trois_lecteurs_du_passe_interrogent_le_schema_du_poc():
+    for appel in (
+        lambda lecteur: charger_bilan_qa(lecteur=lecteur),
+        lambda lecteur: charger_matchs_passes(lecteur=lecteur),
+        lambda lecteur: charger_points("3807291", lecteur=lecteur),
+    ):
+        vu, lecteur = _capture()
+        appel(lecteur)
+        assert vu["schema"] == SCHEMA, vu["schema"]
+        assert vu["schema"] == "TeNNet_test", vu["schema"]
+
+
+def test_chaque_lecteur_du_passe_vise_SA_table_et_aucune_autre():
+    """Trois tables aux colonnes proches (`day`, `event_id`) : confondre
+    `live_matches` et `live_points` rendrait un tableau plausible et faux."""
+    autres = {"live_qa_daily", "live_matches", "live_points",
+              "live_series", "live_now", "live_inplay_markets"}
+    for appel, attendue in (
+        (lambda lecteur: charger_bilan_qa(lecteur=lecteur), "live_qa_daily"),
+        (lambda lecteur: charger_matchs_passes(lecteur=lecteur), "live_matches"),
+        (lambda lecteur: charger_points("3807291", lecteur=lecteur), "live_points"),
+    ):
+        vu, lecteur = _capture()
+        appel(lecteur)
+        assert attendue in vu["query"], (attendue, vu["query"])
+        for interdite in autres - {attendue}:
+            assert interdite not in vu["query"], (interdite, vu["query"])
+
+
+# --- charger_bilan_qa : les dix jours du bilan --------------------------
+
+
+def test_charger_bilan_qa_demande_lordre_chronologique():
+    """Le bilan se lit dans le sens du temps -- c'est ce qui rend la
+    tendance lisible (le trou passe de 97 % a 51 % entre le 3 et le 5 aout).
+    Sans ORDER BY, MySQL ne promet aucun ordre."""
+    vu, lecteur = _capture()
+    charger_bilan_qa(lecteur=lecteur)
+    assert "ORDER BY day" in vu["query"], vu["query"]
+
+
+def test_charger_bilan_qa_rend_les_dix_jours_sans_toucher_aux_absences():
+    """Les quatre premiers jours n'ont AUCUNE mesure de `match_rate`
+    (n_markets = 0) : le lecteur doit les rendre absents, pas a zero. Les
+    convertir ici ferait mentir tout ce qui les lit ensuite."""
+    reel = pd.DataFrame(LIGNES_REELLES_QA)
+    df = charger_bilan_qa(lecteur=lambda schema, query: reel)
+    assert len(df) == 10
+    par_jour = df.set_index("day")
+    assert pd.isna(par_jour.loc[date(2026, 7, 28), "match_rate"])
+    assert par_jour.loc[date(2026, 8, 6), "match_rate"] == 0.6531
+    # Et le 31 juillet garde SA mesure de coherence pbp, alors meme que son
+    # `match_rate` est absent : les deux ne se tiennent pas la main.
+    assert par_jour.loc[date(2026, 7, 31), "pbp_coherence"] == 0.5518
+
+
+def test_charger_bilan_qa_sur_une_table_vide_rend_un_tableau_vide():
+    assert charger_bilan_qa(lecteur=lambda s, q: pd.DataFrame()).empty
+    assert charger_bilan_qa(lecteur=lambda s, q: None).empty
+
+
+# --- charger_matchs_passes : les matchs identifies ----------------------
+
+
+def test_charger_matchs_passes_demande_le_plus_recent_dabord():
+    """La liste s'ouvre sur hier, pas sur le 28 juillet."""
+    vu, lecteur = _capture()
+    charger_matchs_passes(lecteur=lecteur)
+    assert "ORDER BY day DESC" in vu["query"], vu["query"]
+
+
+def test_charger_matchs_passes_rend_les_lignes_reelles_apparie_ou_non():
+    """Les deux etats coexistent en base (416 apparies sur 1 153) et la
+    liste doit pouvoir les distinguer : un lecteur qui filtrerait les non
+    apparies -- ou qui rendrait `matched` en booleen perdu -- casserait le
+    filtre de la page."""
+    reel = pd.DataFrame(LIGNES_REELLES_MATCHS)
+    df = charger_matchs_passes(lecteur=lambda schema, query: reel)
+    assert len(df) == 6
+    par_id = df.set_index("id")
+    assert par_id.loc[1272, "matched"] == 1
+    assert par_id.loc[1277, "matched"] == 0
+    # Les valeurs des filtres viennent des donnees, donc elles doivent
+    # survivre au lecteur intactes.
+    assert set(df["tour_type"]) == {"atp", "wta"}
+    assert len(set(df["league"])) == 4, sorted(set(df["league"]))
+
+
+def test_charger_matchs_passes_sur_une_table_vide_rend_un_tableau_vide():
+    assert charger_matchs_passes(lecteur=lambda s, q: pd.DataFrame()).empty
+    assert charger_matchs_passes(lecteur=lambda s, q: None).empty
+
+
+# --- charger_points : le point par point, et le litteral SQL ------------
+#
+# MEME PIEGE que charger_serie (live_data.py:754) : `event_id` vient de
+# l'URL (st.query_params), donc de n'importe qui. read_sql_query n'expose
+# aucune API de parametres bindes : l'identifiant entre dans un litteral
+# entre quotes, et c'est le retrait de TOUTES les apostrophes -- pas un
+# nettoyage cosmetique -- qui empeche d'en sortir.
+
+
+def test_charger_points_demande_lordre_de_reception():
+    vu, lecteur = _capture()
+    charger_points("3807291", lecteur=lecteur)
+    assert "ORDER BY recv_ts" in vu["query"], vu["query"]
+
+
+def test_charger_points_ne_lit_que_le_match_demande():
+    """176 208 lignes en base : sans le WHERE, la page tirerait la table
+    entiere pour afficher un match."""
+    vu, lecteur = _capture()
+    charger_points("3807291", lecteur=lecteur)
+    assert "WHERE event_id IN ('3807291')" in vu["query"], vu["query"]
+
+
+def test_charger_points_retire_les_apostrophes_de_levent_id():
+    """L'apostrophe est la SEULE facon de sortir du litteral. Sans ce
+    retrait, `3807291' OR '1'='1` refermerait la quote et la condition
+    deviendrait vraie pour toute la table."""
+    vu, lecteur = _capture()
+    charger_points("3807291' OR '1'='1", lecteur=lecteur)
+    # Exactement deux apostrophes dans la requete : celles qui ouvrent et
+    # ferment le SEUL litteral. Compter est plus dur a contourner que
+    # chercher un motif precis.
+    assert vu["query"].count("'") == 2, vu["query"]
+    assert "'1'='1'" not in vu["query"], vu["query"]
+
+
+def test_charger_points_retire_les_antislashs_de_levent_id():
+    """Meme raison que sur charger_serie : un identifiant finissant par un
+    antislash echappe la quote fermante et produit une erreur SQL, affichee
+    a l'ecran comme « Base de donnees injoignable » -- un message qui
+    designe la mauvaise cause."""
+    vu, lecteur = _capture()
+    charger_points("3807291\\", lecteur=lecteur)
+    assert "\\" not in vu["query"], vu["query"]
+    assert "IN ('3807291')" in vu["query"], vu["query"]
+
+
+def test_charger_points_lit_TOUS_les_identifiants_dun_meme_match():
+    """En base, 3799286 et 3802032 sont la MEME rencontre (meme match_id) et
+    portent 2 et 105 points : n'en lire qu'un rendrait le match a moitie,
+    sans le dire."""
+    vu, lecteur = _capture()
+    charger_points("3799286,3802032", lecteur=lecteur)
+    assert "IN ('3799286', '3802032')" in vu["query"], vu["query"]
+    vu, lecteur = _capture()
+    charger_points(["3799286", "3802032"], lecteur=lecteur)
+    assert "IN ('3799286', '3802032')" in vu["query"], vu["query"]
+
+
+def test_charger_points_sans_identifiant_ninterroge_meme_pas_la_base():
+    """`IN ()` est une erreur de syntaxe MySQL : la page l'afficherait comme
+    une base injoignable. Et une requete sans WHERE tirerait tout."""
+    for vide in ("", "   ", ",,", None, []):
+        vu, lecteur = _capture()
+        assert charger_points(vide, lecteur=lecteur).empty, vide
+        assert vu["appels"] == 0, vide
+
+
+def test_charger_points_rend_les_lignes_reelles_dans_lordre_recu():
+    reel = pd.DataFrame(LIGNES_REELLES_POINTS)
+    df = charger_points("3799286,3802032", lecteur=lambda s, q: reel)
+    assert len(df) == 5
+    assert list(df["recv_ts"]) == sorted(df["recv_ts"])
+    assert df.iloc[0]["event_id"] == "3799286"
+    assert df.iloc[-1]["points"] == "30-0"
+
+
+def test_charger_points_sur_un_match_sans_point_rend_un_tableau_vide():
+    assert charger_points("3807291", lecteur=lambda s, q: pd.DataFrame()).empty
+    assert charger_points("3807291", lecteur=lambda s, q: None).empty

@@ -10,6 +10,8 @@ tests qui en ont besoin les reutilisent sans dependre d'un acces reseau/DB a
 l'execution (memes proprietes de determinisme que le reste de la suite).
 """
 
+from datetime import date
+
 # Instant de la capture (epoch UTC, time.time() au moment de la requete).
 CAPTURE_TS = 1785790563.2821338
 
@@ -170,3 +172,182 @@ BATTEMENT_REEL_SCORE = {
         "since_change_s": 10.2,
     },
 }
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Les tables du PASSE : bilan de collecte, matchs joues, point par point
+# ══════════════════════════════════════════════════════════════════════
+#
+# Prelevees le 2026-08-07 sur TeNNet_test (lecture seule), pour la page
+# « Match » -- parcours du passe et bilan de collecte. Aucune donnee de
+# pari, aucun identifiant de compte : ces trois tables sont ecrites par le
+# PoC de collecte et ne portent ni mise, ni resultat de production, ni
+# compte. `ID_MATCH` est la cle de match du schema de production, conservee
+# telle quelle parce qu'elle EST dans la table -- la page n'en fait aucune
+# jointure (hors perimetre, §7 du design).
+
+# LES DIX LIGNES de TeNNet_test.live_qa_daily, integrales et dans l'ordre
+# du jour. Copiees telles que pandas les relit : les DECIMAL NULL de MySQL
+# reviennent en NaN flottant (PAS None), et `day` en datetime.date.
+#
+# Ce que cet echantillon DISCRIMINE, ligne par ligne -- c'est la raison de
+# le prendre en entier plutot que d'en choisir trois :
+#
+# - 2026-07-28 a 07-31 : `n_markets = 0`, donc `match_rate` NULL. Ce sont
+#   les jours « pas de mesure » : les afficher a 0 % en ferait quatre jours
+#   catastrophiques la ou il n'y a simplement rien a mesurer.
+# - 2026-07-31 est LE cas qui separe « jour sans mesure » de « indicateur
+#   sans mesure » : `match_rate` et `gap_ratio` y sont NULL, mais
+#   `pbp_coherence` vaut 0,5518 sur 868 jeux communs -- une VRAIE mesure,
+#   hors seuil. Un code qui declarerait « pas de mesure » au niveau du JOUR
+#   masquerait cette mesure-la. Aucune autre ligne ne le revele.
+# - 2026-08-01 : `match_rate` = 0,8889, a un cheveu SOUS le seuil de 0,90.
+#   C'est la ligne qui epingle la valeur exacte du seuil : le descendre a
+#   0,85 rendrait ce jour conforme, et lui seul.
+# - 2026-08-06 : les trois indicateurs valent 0,6531 / 0,3931 / 0,5159 --
+#   trois valeurs DIFFERENTES, donc une permutation entre indicateurs se
+#   voit. Et les deux SENS s'y separent : 0,6531 est hors seuil comme
+#   MINIMUM (< 0,90) et conforme si on le lisait comme maximum ; 0,5159 est
+#   hors seuil comme MAXIMUM (> 0,05) et conforme si on le lisait comme
+#   minimum. Inverser un sens inverse le verdict, sur cette ligne.
+# - `n_inversions` : NULL partout SAUF le 2026-07-28 (0). La colonne est
+#   donc vide a 90 % -- l'afficher comme si elle valait zero annoncerait
+#   « aucune inversion detectee » la ou rien n'a ete compte.
+# - `gap_ratio` : 0,9742 -> 0,9513 -> 0,9721 -> 0,6253 -> 0,5029 -> 0,5159.
+#   La chute du 3 au 5 aout (la correction d'authentification) est dans les
+#   donnees : une tendance calculee a l'envers la lirait comme une
+#   degradation.
+LIGNES_REELLES_QA = [
+    {"id": 1, "day": date(2026, 7, 28), "n_markets": 0, "n_matched": 0,
+     "match_rate": float("nan"), "n_pbp_common": 0, "n_pbp_ok": 0,
+     "pbp_coherence": float("nan"), "gap_seconds": float("nan"),
+     "inplay_seconds": float("nan"), "gap_ratio": float("nan"),
+     "n_inversions": 0.0, "api_calls": 3975},
+    {"id": 2, "day": date(2026, 7, 29), "n_markets": 0, "n_matched": 0,
+     "match_rate": float("nan"), "n_pbp_common": 0, "n_pbp_ok": 0,
+     "pbp_coherence": float("nan"), "gap_seconds": float("nan"),
+     "inplay_seconds": float("nan"), "gap_ratio": float("nan"),
+     "n_inversions": float("nan"), "api_calls": 27935},
+    {"id": 3, "day": date(2026, 7, 30), "n_markets": 0, "n_matched": 0,
+     "match_rate": float("nan"), "n_pbp_common": 0, "n_pbp_ok": 0,
+     "pbp_coherence": float("nan"), "gap_seconds": float("nan"),
+     "inplay_seconds": float("nan"), "gap_ratio": float("nan"),
+     "n_inversions": float("nan"), "api_calls": 33003},
+    {"id": 4, "day": date(2026, 7, 31), "n_markets": 0, "n_matched": 0,
+     "match_rate": float("nan"), "n_pbp_common": 868, "n_pbp_ok": 479,
+     "pbp_coherence": 0.5518, "gap_seconds": float("nan"),
+     "inplay_seconds": float("nan"), "gap_ratio": float("nan"),
+     "n_inversions": float("nan"), "api_calls": 28645},
+    {"id": 5, "day": date(2026, 8, 1), "n_markets": 54, "n_matched": 48,
+     "match_rate": 0.8889, "n_pbp_common": 1653, "n_pbp_ok": 568,
+     "pbp_coherence": 0.3436, "gap_seconds": 341836.36477303505,
+     "inplay_seconds": 350890.36265707016, "gap_ratio": 0.9742,
+     "n_inversions": float("nan"), "api_calls": 33866},
+    {"id": 6, "day": date(2026, 8, 2), "n_markets": 83, "n_matched": 49,
+     "match_rate": 0.5904, "n_pbp_common": 1204, "n_pbp_ok": 444,
+     "pbp_coherence": 0.3688, "gap_seconds": 543359.7065548897,
+     "inplay_seconds": 571201.1665539742, "gap_ratio": 0.9513,
+     "n_inversions": float("nan"), "api_calls": 35296},
+    {"id": 7, "day": date(2026, 8, 3), "n_markets": 88, "n_matched": 60,
+     "match_rate": 0.6818, "n_pbp_common": 1233, "n_pbp_ok": 617,
+     "pbp_coherence": 0.5004, "gap_seconds": 667384.553593874,
+     "inplay_seconds": 686569.8906400204, "gap_ratio": 0.9721,
+     "n_inversions": float("nan"), "api_calls": 38249},
+    {"id": 8, "day": date(2026, 8, 4), "n_markets": 121, "n_matched": 83,
+     "match_rate": 0.686, "n_pbp_common": 1743, "n_pbp_ok": 1083,
+     "pbp_coherence": 0.6213, "gap_seconds": 459615.27536058426,
+     "inplay_seconds": 734982.036698103, "gap_ratio": 0.6253,
+     "n_inversions": float("nan"), "api_calls": 36349},
+    {"id": 9, "day": date(2026, 8, 5), "n_markets": 55, "n_matched": 40,
+     "match_rate": 0.7273, "n_pbp_common": 1056, "n_pbp_ok": 526,
+     "pbp_coherence": 0.4981, "gap_seconds": 157274.57521533966,
+     "inplay_seconds": 312761.20657014847, "gap_ratio": 0.5029,
+     "n_inversions": float("nan"), "api_calls": 34373},
+    {"id": 10, "day": date(2026, 8, 6), "n_markets": 49, "n_matched": 32,
+     "match_rate": 0.6531, "n_pbp_common": 613, "n_pbp_ok": 241,
+     "pbp_coherence": 0.3931, "gap_seconds": 154333.76186680794,
+     "inplay_seconds": 299136.4854776859, "gap_ratio": 0.5159,
+     "n_inversions": float("nan"), "api_calls": 33325},
+]
+
+# Six lignes REELLES de TeNNet_test.live_matches, choisies pour ce qu'elles
+# separent -- la table en compte 1 153 :
+#
+# - 3799286 et 3802032 portent le MEME `match_id` : la source a donne DEUX
+#   `event_id` a une seule rencontre (2 cas sur 1 153 au prelevement), et
+#   l'un est apparie quand l'autre ne l'est pas. C'est la preuve, en
+#   donnees, qu'un lecteur du point par point qui n'accepterait qu'un seul
+#   identifiant rendrait la moitie du match : 2 points sous 3799286,
+#   105 sous 3802032.
+# - 3801784 apparait DEUX FOIS, aux jours 08-04 et 08-05 : un match a
+#   cheval sur deux journees. 1 153 lignes ne sont donc pas 1 153 matchs.
+# - 3807294 est le cas NON APPARIE : `id_market`, `ID_MATCH` et
+#   `p1_is_home` tous NULL a la fois. C'est l'etat de 737 lignes sur 1 153.
+# - Les circuits (`atp`/`wta`) et les ligues (quatre distinctes ici) ne sont
+#   pas codes en dur dans la page : ils se tirent de ces valeurs.
+# - "Christopher O'Connell" porte une APOSTROPHE, dans la donnee elle-meme.
+LIGNES_REELLES_MATCHS = [
+    {"id": 1048, "day": date(2026, 8, 2), "event_id": "3799286",
+     "match_id": "11517-24721-21346-4", "id_market": None, "ID_MATCH": None,
+     "participant1": "James Duckworth", "participant2": "Christopher O'Connell",
+     "p1_is_home": None, "league": "National Bank Open - Montreal",
+     "tour_type": "atp", "start_ts": 1785688200, "matched": 0,
+     "ambiguous_market": 0},
+    {"id": 1097, "day": date(2026, 8, 3), "event_id": "3802032",
+     "match_id": "11517-24721-21346-4", "id_market": "1.260674706",
+     "ID_MATCH": "dC66M7wf", "participant1": "James Duckworth",
+     "participant2": "Christopher O'Connell", "p1_is_home": 1.0,
+     "league": "National Bank Open - Montreal", "tour_type": "atp",
+     "start_ts": 1785774600, "matched": 1, "ambiguous_market": 0},
+    {"id": 1209, "day": date(2026, 8, 4), "event_id": "3801784",
+     "match_id": "18455-52254-16739-5", "id_market": "1.260713970",
+     "ID_MATCH": "EZqCkwaJ", "participant1": "Aryna Sabalenka",
+     "participant2": "Moyuka Uchijima", "p1_is_home": 1.0,
+     "league": "National Bank Open - Toronto", "tour_type": "wta",
+     "start_ts": 1785855600, "matched": 1, "ambiguous_market": 0},
+    {"id": 1210, "day": date(2026, 8, 5), "event_id": "3801784",
+     "match_id": "18455-52254-16739-5", "id_market": "1.260713970",
+     "ID_MATCH": "EZqCkwaJ", "participant1": "Aryna Sabalenka",
+     "participant2": "Moyuka Uchijima", "p1_is_home": 1.0,
+     "league": "National Bank Open - Toronto", "tour_type": "wta",
+     "start_ts": 1785855600, "matched": 1, "ambiguous_market": 0},
+    {"id": 1272, "day": date(2026, 8, 6), "event_id": "3807291",
+     "match_id": "13447-50118-21923-5", "id_market": "1.260774584",
+     "ID_MATCH": "dfqFQIfD", "participant1": "Damir Dzumhur",
+     "participant2": "Mathys Erhard", "p1_is_home": 1.0,
+     "league": "Grodzisk Mazowiecki Challenger", "tour_type": "atp",
+     "start_ts": 1786003200, "matched": 1, "ambiguous_market": 0},
+    {"id": 1277, "day": date(2026, 8, 6), "event_id": "3807294",
+     "match_id": "110995-93848-21926-5", "id_market": None, "ID_MATCH": None,
+     "participant1": "Yannick Theodor Alexandrescou",
+     "participant2": "Petr Brunclik", "p1_is_home": None,
+     "league": "Plovdiv 2 Challenger", "tour_type": "atp",
+     "start_ts": 1786006800, "matched": 0, "ambiguous_market": 0},
+]
+
+# Lignes REELLES de TeNNet_test.live_points, pour les DEUX `event_id` du
+# meme match (11517-24721-21346-4, cf. ci-dessus) : c'est ce couple qui
+# discrimine un lecteur mono-identifiant. Les `recv_ts` sont conserves a la
+# precision de la base -- ils sont tous DIFFERENTS, donc un tri casse se
+# voit ; 3799286 est ANTERIEUR a 3802032, donc l'entrelacement chronologique
+# des deux identifiants est verifiable.
+#
+# `indicator` vaut « 0,0 » sur la premiere ligne de chaque identifiant puis
+# « 1,0 » : la valeur bouge, une colonne figee au premier releve se verrait.
+LIGNES_REELLES_POINTS = [
+    {"id": 159649, "day": date(2026, 8, 2), "event_id": "3799286",
+     "recv_ts": 1785689065.8099902, "score": "0-0", "points": "0-0",
+     "indicator": "0,0", "status": "InPlay"},
+    {"id": 159747, "day": date(2026, 8, 2), "event_id": "3799286",
+     "recv_ts": 1785689428.3790305, "score": "0-0", "points": "0-0",
+     "indicator": "1,0", "status": "InPlay"},
+    {"id": 167076, "day": date(2026, 8, 3), "event_id": "3802032",
+     "recv_ts": 1785773066.148995, "score": "0-0", "points": "0-0",
+     "indicator": "1,0", "status": "InPlay"},
+    {"id": 169606, "day": date(2026, 8, 3), "event_id": "3802032",
+     "recv_ts": 1785786368.638749, "score": "0-0", "points": "15-0",
+     "indicator": "1,0", "status": "InPlay"},
+    {"id": 169611, "day": date(2026, 8, 3), "event_id": "3802032",
+     "recv_ts": 1785786385.7547333, "score": "0-0", "points": "30-0",
+     "indicator": "1,0", "status": "InPlay"},
+]
