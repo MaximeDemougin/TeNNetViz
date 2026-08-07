@@ -34,6 +34,7 @@ from live_data import (
     charger_bilan_qa,
     charger_matchs,
     charger_matchs_passes,
+    charger_points,
     charger_serie,
 )
 
@@ -50,6 +51,34 @@ BASE_INJOIGNABLE = "Base de donnees injoignable. Reessayez plus tard."
 #: Les trois etats du filtre d'appariement. « Tous » d'abord : un filtre
 #: pose par defaut cacherait des lignes sans que personne l'ait demande.
 TOUS, APPARIES, NON_APPARIES = "Tous", "Appariés", "Non appariés"
+
+#: Couverture MESUREE de `live_series` le 2026-08-07 : 45 179 lignes entre
+#: le 04-08 a 13:50 et le 07-08 a 09:04, quand `live_points` en porte dix
+#: jours. Valeur d'AFFICHAGE seulement -- rien ici ne la compare a une
+#: date : c'est l'absence REELLE de serie qui declenche le message, jamais
+#: ce nombre. La retention n'est pas un reglage, elle resulte de la purge
+#: cote PoC : ce nombre derivera, et le texte le donne pour ce qu'il est,
+#: un ordre de grandeur.
+COUVERTURE_SERIES = "environ 2,6 jours"
+
+#: Ce que la page dit quand la courbe manque PARCE QUE la serie n'a pas ete
+#: gardee -- plutot qu'un graphique vide, qui se lirait comme une panne.
+#:
+#: Ce n'est PAS une perte de donnee mais une limite d'ACCES : les cotes de
+#: ces matchs existent toujours dans les fichiers bruts du collecteur, et
+#: c'est cette page qui ne peut pas les lire -- elle ne voit que la base.
+#: Le dire de travers dans l'autre sens (« les cotes anciennes sont
+#: perdues ») ferait rouvrir un chantier qui n'a pas lieu d'etre, et
+#: laisserait croire a une contrainte sur la modelisation, qui travaille
+#: sur les fichiers bruts et n'est pas concernee.
+COTES_NON_CONSERVEES = (
+    "Pas de cotes conservées pour ce match : `live_series` ne remonte qu'à "
+    f"{COUVERTURE_SERIES} en base, et ce match est plus ancien. Ce n'est "
+    "pas une perte — les cotes brutes de cette rencontre existent toujours "
+    "du côté du collecteur, dans des fichiers que cette page n'a pas moyen "
+    "de lire : elle ne voit que la base. Le point par point, lui, remonte à "
+    "dix jours et reste affiché dans son onglet."
+)
 
 
 # ── Ce qui s'affiche sans jamais ecrire « nan » ───────────────────────
@@ -153,7 +182,26 @@ def filtrer(df, jours, circuits, ligues, appariement) -> pd.DataFrame:
     return df[garde]
 
 
-def identifiants_du_match(df, ligne) -> str:
+def identifiants_par_match(df) -> dict:
+    """``match_id`` -> tous ses ``event_id``, dans l'ordre de la table.
+
+    Calcule UNE fois pour toute la liste : refaire le rapprochement ligne a
+    ligne couterait un balayage complet par ligne, soit 1 153 balayages de
+    1 153 lignes a chaque rendu de la page.
+    """
+    groupes = {}
+    if df is None or df.empty or "match_id" not in df.columns:
+        return groupes
+    for cle, identifiant in zip(df["match_id"], df["event_id"]):
+        if _absente(cle) or _absente(identifiant):
+            continue
+        vus = groupes.setdefault(str(cle), [])
+        if str(identifiant) not in vus:
+            vus.append(str(identifiant))
+    return groupes
+
+
+def identifiants_du_match(groupes, ligne) -> str:
     """TOUS les ``event_id`` de la MEME rencontre, separes par des virgules.
 
     La source attribue parfois deux identifiants a un seul match -- 2 cas
@@ -164,14 +212,9 @@ def identifiants_du_match(df, ligne) -> str:
     """
     propre = str(ligne.get("event_id"))
     cle = ligne.get("match_id")
-    if _absente(cle) or df is None or "match_id" not in df.columns:
+    if _absente(cle):
         return propre
-    memes = df[df["match_id"].astype(str) == str(cle)]
-    vus = []
-    for identifiant in memes["event_id"].dropna():
-        if str(identifiant) not in vus:
-            vus.append(str(identifiant))
-    return ",".join(vus) if vus else propre
+    return ",".join(groupes.get(str(cle), [])) or propre
 
 
 def tableau_liste(df) -> pd.DataFrame:
@@ -185,6 +228,7 @@ def tableau_liste(df) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
     marques = apparies(df)
+    groupes = identifiants_par_match(df)
     return pd.DataFrame({
         "Jour": [_texte(l, "day", "—") for _, l in df.iterrows()],
         "Début": [_heure(l.get("start_ts")) for _, l in df.iterrows()],
@@ -193,7 +237,8 @@ def tableau_liste(df) -> pd.DataFrame:
         "Circuit": [_texte(l, "tour_type", "—") for _, l in df.iterrows()],
         "Ligue": [_texte(l, "league", "—") for _, l in df.iterrows()],
         "Apparié": ["oui" if a else "non" for a in marques],
-        "Identifiants": [identifiants_du_match(df, l) for _, l in df.iterrows()],
+        "Identifiants": [identifiants_du_match(groupes, l)
+                         for _, l in df.iterrows()],
     })
 
 
@@ -277,9 +322,12 @@ def niveau_1() -> None:
                  height=min(420, 40 + 35 * len(choisis)))
     st.caption(texte_appariement(choisis))
 
+    groupes = identifiants_par_match(choisis)
     etiquettes = {}
     for _, ligne in choisis.iterrows():
-        etiquettes.setdefault(identifiants_du_match(choisis, ligne),
+        # Une seule entree par RENCONTRE : les deux journees d'un match a
+        # cheval, comme ses deux identifiants, ouvrent la meme chose.
+        etiquettes.setdefault(identifiants_du_match(groupes, ligne),
                               _etiquette_passe(ligne))
     ouvrir, _ = st.columns([3, 1])
     choix = ouvrir.selectbox(
@@ -321,6 +369,124 @@ def ligne_du_direct(matchs, demandes):
     return None if trouvees.empty else trouvees.iloc[0]
 
 
+def match_archive(rangee, points) -> pd.Series:
+    """La ligne d'affichage d'un match qui n'est plus publie.
+
+    ``live_matches`` ne porte NI score NI statut : le dernier releve de
+    ``live_points`` donne le premier. Le statut, lui, n'est PAS repris tel
+    quel -- le dernier point du match Duckworth (3 aout, 6-3 6-1, donc fini)
+    dit encore « InPlay » parce que la collecte s'est arretee la sans jamais
+    recevoir de trame de cloture. L'afficher ferait passer une rencontre
+    vieille de quatre jours pour un match en cours.
+    """
+    ligne = dict(rangee) if rangee is not None else {}
+    dernier = None if points is None or points.empty else points.iloc[-1]
+    ligne["score"] = None if dernier is None else dernier.get("score")
+    ligne["points"] = None if dernier is None else dernier.get("points")
+    # Le serveur ne se DEDUIT pas ici : `live_points.indicator` n'est pas le
+    # serveur, et le champ serveur de la source se contredit dans 13 % des
+    # jeux. Rien plutot qu'une balle posee du mauvais cote.
+    ligne["server"] = None
+    ligne["status"] = "archivé"
+    return pd.Series(ligne)
+
+
+def rencontre_appariee(rangees) -> bool:
+    """La rencontre a-t-elle ete rapprochee d'un marche, sur N'IMPORTE
+    laquelle de ses lignes ?
+
+    Une rencontre a plusieurs lignes dans ``live_matches`` -- une par
+    journee, et une par identifiant quand la source en a emis deux -- et
+    elles ne s'accordent PAS toujours : 3799286 n'est pas apparie quand
+    3802032, la meme rencontre, l'est, et c'est sous l'apparie que les cotes
+    ont ete ecrites. Juger sur la premiere ligne venue ferait dependre le
+    motif affiche de l'ordre de la requete, donc du hasard.
+
+    La reponse decide du MOTIF affiche a la place de la courbe, et se
+    tromper de motif est pire que de n'en donner aucun : ca envoie chercher
+    au mauvais endroit.
+    """
+    if rangees is None or len(rangees) == 0:
+        return False
+    return bool(apparies(rangees).any())
+
+
+def motif_absence_de_cotes(rangees, serie) -> str | None:
+    """Pourquoi il n'y a pas de courbe -- ou None si `detail_match` sait.
+
+    DEUX absences differentes, et les confondre serait mentir :
+
+    - la serie existe (meme sans une seule cote d'exchange : un match jamais
+      apparie garde des releves de score), ou la rencontre n'a jamais eu de
+      marche -> « pas de marche apparie », le motif que `detail_match` donne
+      deja tout seul, et c'est le bon ;
+    - la serie est VIDE alors que la rencontre ETAIT appariee -> ce n'est
+      pas le marche qui manque, c'est la retention. Laisser le premier motif
+      s'afficher accuserait la collecte d'un trou qu'elle n'a pas.
+    """
+    if serie is not None and not serie.empty:
+        return None
+    return COTES_NON_CONSERVEES if rencontre_appariee(rangees) else None
+
+
+def detail_archive(event_id, maintenant: float) -> None:
+    """Le detail d'un match qui n'est plus publie, relu dans les tables du
+    passe.
+
+    Les cotes vivent ~2,6 jours dans `live_series`, le point par point dix
+    jours dans `live_points` : au-dela, le match garde son deroulement et
+    perd sa courbe. La page le DIT -- une absence silencieuse se lit comme
+    une panne -- et le point par point reste affiche, puisqu'il est la.
+    """
+    try:
+        passes = charger_matchs_passes()
+        points = charger_points(event_id)
+        serie = charger_serie(event_id)
+    except Exception:
+        st.error(BASE_INJOIGNABLE)
+        return
+
+    demandes = _demandes(event_id)
+    trouvees = pd.DataFrame()
+    rangee = None
+    if not passes.empty and "event_id" in passes.columns:
+        trouvees = passes[passes["event_id"].astype(str).isin(demandes)]
+        if not trouvees.empty:
+            # La ligne la plus RECENTE porte l'identite a afficher : un match
+            # a cheval sur deux journees en a deux, et c'est la derniere qui
+            # dit quand il s'est vraiment joue.
+            if "day" in trouvees.columns:
+                trouvees = trouvees.sort_values("day", kind="stable")
+            rangee = trouvees.iloc[-1]
+    if rangee is None and (points is None or points.empty):
+        st.warning(
+            "Ce match n'est plus publié, et la collecte n'en a rien gardé : "
+            "ni ligne dans `live_matches`, ni point par point."
+        )
+        return
+
+    m = match_archive(rangee, points)
+    st.caption(
+        f"Match archivé — {_texte(m, 'day', 'journée inconnue')}, "
+        f"{0 if points is None else len(points)} relevés de point par point. "
+        "Les pastilles de fraîcheur restent blanches : la collecte de ce "
+        "match est terminée, il n'y a plus de flux dont mesurer l'âge."
+    )
+    # La serie porte les cotes ET l'etat de jeu ; les points ne portent que
+    # l'etat de jeu, mais dix jours en arriere. On affiche donc la serie
+    # quand elle existe et les points quand elle a disparu -- jamais rien,
+    # et jamais un graphique vide.
+    if serie is not None and not serie.empty:
+        deroulement = serie
+    else:
+        deroulement = (
+            pd.DataFrame() if points is None or points.empty
+            else points.rename(columns={"recv_ts": "ts"})
+        )
+    afficher(m, deroulement, maintenant,
+             absence_cotes=motif_absence_de_cotes(trouvees, serie))
+
+
 event_id = st.query_params.get("event_id")
 
 niveau_1()
@@ -350,7 +516,10 @@ if event_id:
 
         m = ligne_du_direct(matchs, _demandes(event_id))
         if m is None:
-            st.warning("Ce match n'est plus publie.")
+            # Plus dans `live_now` : le match est termine et retire (six
+            # heures) ou bien plus ancien. Les tables du passe, elles,
+            # l'ont encore -- c'est tout l'objet de cette page.
+            detail_archive(event_id, maintenant)
             return
 
         try:

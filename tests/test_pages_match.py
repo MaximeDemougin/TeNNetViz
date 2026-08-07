@@ -2,6 +2,7 @@
 `str(m.get(champ) or "-")` affiche litteralement "nan" pour un NaN flottant
 (NaN est vrai au sens booleen). Verifie que ce n'est plus le cas."""
 
+import re
 import sys
 import time
 import types
@@ -11,8 +12,13 @@ from streamlit.testing.v1 import AppTest
 
 from fixtures_reelles import (
     LIGNE_REELLE_MATCH_AUTRE_LIGUE,
+    LIGNE_REELLE_POINT_FINAL,
     LIGNES_REELLES_MATCHS,
+    LIGNES_REELLES_POINTS,
+    LIGNES_REELLES_POINTS_NON_APPARIE,
+    LIGNES_REELLES_POINTS_RECENTS,
     LIGNES_REELLES_QA,
+    LIGNES_REELLES_SERIE_RECENTE,
 )
 
 
@@ -23,6 +29,23 @@ from fixtures_reelles import (
 #: bilan de collecte, par exemple).
 TABLES = ("live_now", "live_series", "live_qa_daily", "live_matches",
           "live_points")
+
+
+def _restreindre_aux_identifiants(df, query):
+    """Le `WHERE event_id IN (...)` de la requete, applique pour de vrai.
+
+    Sans cela le bouchon rendrait TOUS les points quel que soit le match
+    demande, et une page qui n'ouvrirait qu'un identifiant sur deux
+    passerait le test sans qu'on le voie -- la mesure qui compte ici est
+    justement que 3799286 porte 2 points quand 3802032 en porte 105.
+
+    Un tableau sans colonne `event_id` (les series ecrites a la main par
+    les tests plus anciens) traverse tel quel : il n'y a rien a restreindre.
+    """
+    demandes = re.findall(r"'([^']*)'", query)
+    if not demandes or df is None or df.empty or "event_id" not in df.columns:
+        return df
+    return df[df["event_id"].astype(str).isin(demandes)]
 
 
 def _mock_tables(monkeypatch, **tables):
@@ -39,7 +62,9 @@ def _mock_tables(monkeypatch, **tables):
         for nom in TABLES:
             if nom in query:
                 df = tables.get(nom)
-                return pd.DataFrame() if df is None else df
+                if df is None:
+                    return pd.DataFrame()
+                return _restreindre_aux_identifiants(df, query)
         raise AssertionError(f"requete sur une table non bouchonnee : {query}")
 
     faux = types.ModuleType("db_utils.db_utils")
@@ -592,3 +617,169 @@ def test_le_graphique_porte_le_SCORE_au_survol():
     # Et c'est bien le score qui y est, pas un indice.
     valeurs = {str(v[0]) for t in porteuses for v in t.customdata}
     assert any("-" in v for v in valeurs), f"pas un score : {sorted(valeurs)[:5]}"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# NIVEAU 2 : le match choisi -- avec ses cotes, ou en le DISANT
+# ══════════════════════════════════════════════════════════════════════
+#
+# LA LIMITE DURE : `live_series` ne couvre que ~2,6 jours (45 179 lignes du
+# 2026-08-04 13:50 au 2026-08-07 09:04) quand `live_points` en couvre dix.
+# Un match ancien garde donc son point par point mais perd sa courbe de
+# cotes. La page doit le DIRE et ne jamais afficher un graphique vide : une
+# absence silencieuse se lit comme une panne.
+#
+# Ce n'est PAS une perte de donnee mais une limite d'ACCES -- les cotes
+# brutes vivent dans les fichiers du collecteur, que cette page (hebergee
+# ailleurs) ne peut pas lire. Le message doit etre juste sur ce point.
+
+SERIE_RECENTE = pd.DataFrame(LIGNES_REELLES_SERIE_RECENTE)
+POINTS_RECENTS = pd.DataFrame(LIGNES_REELLES_POINTS_RECENTS)
+POINTS_ANCIENS = pd.DataFrame(LIGNES_REELLES_POINTS + [LIGNE_REELLE_POINT_FINAL])
+POINTS_NON_APPARIE = pd.DataFrame(LIGNES_REELLES_POINTS_NON_APPARIE)
+
+#: Les deux identifiants de la MEME rencontre (Duckworth vs O'Connell) :
+#: c'est ce que la liste met dans l'URL, et ce que le detail doit ouvrir.
+DUCKWORTH = "3799286,3802032"
+
+
+def _capturer_graphiques(monkeypatch):
+    """Les figures REELLEMENT poussees a l'ecran.
+
+    Verifier le source ne suffirait pas : ce qui compte est qu'aucun cadre
+    vide n'arrive devant l'utilisateur.
+    """
+    import streamlit as st
+
+    captures = []
+    vrai = st.plotly_chart
+    monkeypatch.setattr(
+        st, "plotly_chart",
+        lambda fig, **kw: (captures.append(fig), vrai(fig, **kw))[1],
+    )
+    return captures
+
+
+def _niveau_2(monkeypatch, event_id, serie=None, points=None, matchs=None):
+    """La page avec un match choisi, et AUCUN match dans le direct.
+
+    `live_now` vide est l'etat normal d'un match archive : il n'est plus
+    publie depuis longtemps, et c'est justement pour ceux-la que les tables
+    du passe existent.
+    """
+    at = _page(
+        monkeypatch,
+        live_qa_daily=BILAN_REEL,
+        live_matches=PASSES_REELS if matchs is None else matchs,
+        live_points=points,
+        live_series=serie,
+    )
+    at.query_params["event_id"] = event_id
+    at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def _messages(at):
+    return ([str(i.value) for i in at.info] + [str(w.value) for w in at.warning]
+            + [str(c.value) for c in at.caption])
+
+
+def test_un_match_ancien_sans_serie_DIT_que_les_cotes_ne_sont_pas_conservees(monkeypatch):
+    """Le match Duckworth du 2-3 aout a ses 107 points mais plus une seule
+    ligne de serie : la retention est passee dessus.
+
+    Deux exigences, et la seconde compte autant que la premiere : le dire,
+    et ne PAS pousser de graphique vide.
+    """
+    captures = _capturer_graphiques(monkeypatch)
+    at = _niveau_2(monkeypatch, DUCKWORTH, serie=None, points=POINTS_ANCIENS)
+
+    dits = [t for t in _messages(at) if "cotes conservées" in t]
+    assert dits, _messages(at)
+    texte = dits[0]
+    # La retention, chiffree : sans elle le lecteur ne sait pas si c'est
+    # une panne, un oubli, ou la regle.
+    assert "2,6" in texte, texte
+    # Et ce n'est PAS une perte : les cotes existent, ailleurs. Alarmer
+    # ferait rouvrir un chantier qui n'a pas lieu d'etre.
+    assert "pas une perte" in texte, texte
+    assert not captures, "un graphique a ete pousse alors que la serie est vide"
+
+
+def test_le_point_par_point_reste_affiche_quand_les_cotes_manquent(monkeypatch):
+    """`live_points` couvre dix jours quand `live_series` en couvre 2,6 :
+    perdre la courbe ne doit pas emporter le deroulement du match."""
+    at = _niveau_2(monkeypatch, DUCKWORTH, serie=None, points=POINTS_ANCIENS)
+
+    tableau = point_par_point(at)
+    assert tableau is not None, "aucun tableau point par point"
+    # Les SIX releves des deux identifiants, replies en quatre etats de jeu
+    # (trois « 0-0 / 0-0 » consecutifs n'en font qu'un).
+    assert len(tableau) == 4, tableau.to_dict("records")
+    assert "6-3,6-1" in set(tableau["score"]), tableau.to_dict("records")
+    # Les DEUX identifiants ont ete ouverts : n'en lire qu'un ne donnerait
+    # que quatre releves sur six, et la page le compte a voix haute.
+    assert any("6 relevés" in t for t in _messages(at)), _messages(at)
+
+
+def test_le_score_d_un_match_archive_vient_du_DERNIER_point(monkeypatch):
+    """`live_matches` ne porte ni score ni statut. Et le statut du dernier
+    releve dit encore « InPlay » alors que le match est fini depuis quatre
+    jours -- le reprendre ferait passer une archive pour un match en cours.
+    """
+    at = _niveau_2(monkeypatch, DUCKWORTH, serie=None, points=POINTS_ANCIENS)
+
+    par_label = {m.label: m.value for m in at.metric}
+    assert par_label["Score"] == "6-3,6-1", par_label
+    textes = " ".join(_messages(at))
+    assert "archivé" in textes, textes
+    assert "InPlay" not in textes, textes
+
+
+def test_un_match_recent_affiche_bien_ses_cotes(monkeypatch):
+    """Le meme ecran, sur un match que la retention couvre encore : la
+    courbe est la, et aucun message d'absence ne s'affiche."""
+    captures = _capturer_graphiques(monkeypatch)
+    at = _niveau_2(monkeypatch, "3807291", serie=SERIE_RECENTE,
+                   points=POINTS_RECENTS)
+
+    assert captures, "aucun graphique pousse alors que la serie existe"
+    noms = {t.name for t in captures[0].data}
+    assert {"back a", "back b"} <= noms, noms
+    assert not [t for t in _messages(at) if "cotes conservées" in t], _messages(at)
+    assert not [t for t in _messages(at) if "marché apparié" in t], _messages(at)
+
+
+def test_un_match_JAMAIS_apparie_ne_parle_PAS_de_retention(monkeypatch):
+    """Deux absences de cotes, deux motifs, et les confondre serait mentir.
+
+    3807294 (Plovdiv 2 Challenger) n'a jamais eu de marche : `id_market`,
+    `ID_MATCH` et `p1_is_home` tous NULL -- l'etat de 737 lignes sur 1 153.
+    Ses cotes ne manquent pas parce que la retention est passee : il n'y en
+    a jamais eu. Accuser la retention ferait chercher un trou de collecte
+    la ou il n'y en a pas.
+    """
+    at = _niveau_2(monkeypatch, "3807294", serie=None,
+                   points=POINTS_NON_APPARIE)
+
+    textes = _messages(at)
+    assert not [t for t in textes if "cotes conservées" in t], textes
+    assert [t for t in textes if "marché apparié" in t], textes
+    # Le match est quand meme la, avec son deroulement.
+    tableau = point_par_point(at)
+    assert tableau is not None and "7-5,6-3" in set(tableau["score"]), \
+        None if tableau is None else tableau.to_dict("records")
+
+
+def test_le_detail_s_affiche_SOUS_la_liste_et_pas_a_sa_place(monkeypatch):
+    """Un ecran a deux niveaux : choisir un match ne doit pas faire
+    disparaitre le bilan ni la liste -- on passe d'un match a l'autre sans
+    revenir en arriere."""
+    at = _niveau_2(monkeypatch, "3807291", serie=SERIE_RECENTE,
+                   points=POINTS_RECENTS)
+
+    titres = [str(s.value) for s in at.subheader]
+    assert any("Santé de la collecte" in t for t in titres), titres
+    assert any("Le match choisi" in t for t in titres), titres
+    assert liste_des_matchs(at) is not None, "la liste a disparu"

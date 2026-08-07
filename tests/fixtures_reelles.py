@@ -367,3 +367,92 @@ LIGNES_REELLES_POINTS = [
      "recv_ts": 1785786385.7547333, "score": "0-0", "points": "30-0",
      "indicator": "1,0", "status": "InPlay"},
 ]
+
+# Le DERNIER point recu pour 3802032 (id 170791) : le match est fini --
+# 6-3, 6-1 -- et son `status` dit pourtant encore « InPlay ». La collecte
+# s'est arretee la, elle n'a jamais recu de trame « Finished ». C'est cette
+# ligne qui interdit de reprendre le statut du dernier releve pour afficher
+# un match archive : elle ferait passer une rencontre du 3 aout pour un
+# match en cours.
+LIGNE_REELLE_POINT_FINAL = {
+    "id": 170791, "day": date(2026, 8, 3), "event_id": "3802032",
+    "recv_ts": 1785795905.3878095, "score": "6-3,6-1", "points": "0-0",
+    "indicator": "0,1", "status": "InPlay",
+}
+
+# ── Un match RECENT, celui qui a encore ses cotes ─────────────────────
+#
+# event_id 3807291 (Damir Dzumhur vs Mathys Erhard, Grodzisk Mazowiecki
+# Challenger) est deja dans LIGNES_REELLES_MATCHS ci-dessus, apparie et
+# collecte le 2026-08-06. Il porte 368 lignes de `live_series` et 62 de
+# `live_points` -- c'est le cas OPPOSE a 3802032, qui n'a plus que ses
+# points : la retention de `live_series` (~2,6 jours au 2026-08-07, du
+# 04-08 13:50 au 07-08 09:04) couvre l'un et plus l'autre.
+#
+# Quatre lignes prelevees sur les 368, choisies pour ce qu'elles separent :
+#
+# - la premiere (id 55818) n'a AUCUNE cote bookmaker (NULL) alors que
+#   l'exchange en a deja : les six series ne commencent pas ensemble, et
+#   une figure qui exigerait les six ne tracerait rien ;
+# - les deux suivantes portent `evenement = 'fin_de_jeu'` -- les traits
+#   verticaux du graphique -- et des cotes qui BOUGENT dans le bon sens
+#   (1,24 -> 1,42 -> 1,58 quand le joueur a perd des jeux) : une
+#   permutation entre back a et back b se verrait ;
+# - la derniere (id 57531) a TOUTES ses cotes a NULL, l'etat de fin de
+#   collecte : elle ne doit produire aucun point sur la courbe, jamais un
+#   prix a zero -- qui se lirait comme une certitude.
+LIGNES_REELLES_SERIE_RECENTE = [
+    {"id": 55818, "event_id": "3807291", "ts": 1786021326.333186,
+     "back_odds_a": 1.24, "lay_odds_a": 1.25, "back_odds_b": 5.0,
+     "lay_odds_b": 5.2, "book_odds_a": float("nan"),
+     "book_odds_b": float("nan"), "score": "0-0", "points": "0-0",
+     "server": None, "evenement": None},
+    {"id": 56003, "event_id": "3807291", "ts": 1786021946.697545,
+     "back_odds_a": 1.42, "lay_odds_a": 1.43, "back_odds_b": 3.3,
+     "lay_odds_b": 3.4, "book_odds_a": 1.375, "book_odds_b": 2.975,
+     "score": "0-1", "points": "0-0", "server": "1",
+     "evenement": "fin_de_jeu"},
+    {"id": 56095, "event_id": "3807291", "ts": 1786022192.2400916,
+     "back_odds_a": 1.58, "lay_odds_a": 1.59, "back_odds_b": 2.68,
+     "lay_odds_b": 2.72, "book_odds_a": 1.51, "book_odds_b": 2.5175,
+     "score": "0-2", "points": "0-0", "server": "0",
+     "evenement": "fin_de_jeu"},
+    {"id": 57531, "event_id": "3807291", "ts": 1786027217.4271064,
+     "back_odds_a": None, "lay_odds_a": None, "back_odds_b": None,
+     "lay_odds_b": None, "book_odds_a": None, "book_odds_b": None,
+     "score": "3-6,6-6", "points": "1-2", "server": "1", "evenement": None},
+]
+
+# Trois lignes REELLES de `live_points` pour ce meme 3807291 : le premier
+# releve et les deux derniers. Le dernier score (3-6, 6-6) est celui que le
+# bandeau doit afficher pour un match archive -- il vient de `live_points`,
+# pas de `live_matches`, qui ne porte NI score NI statut.
+LIGNES_REELLES_POINTS_RECENTS = [
+    {"id": 194730, "day": date(2026, 8, 6), "event_id": "3807291",
+     "recv_ts": 1786021320.038717, "score": "0-0", "points": "0-0",
+     "indicator": "0,0", "status": "InPlay"},
+    {"id": 195056, "day": date(2026, 8, 6), "event_id": "3807291",
+     "recv_ts": 1786026829.9940543, "score": "3-6,6-6", "points": "0-2",
+     "indicator": "1,0", "status": "InPlay"},
+    {"id": 195061, "day": date(2026, 8, 6), "event_id": "3807291",
+     "recv_ts": 1786026840.3442178, "score": "3-6,6-6", "points": "1-2",
+     "indicator": "0,1", "status": "InPlay"},
+]
+
+# Deux lignes REELLES de `live_points` pour 3807294 (Yannick Theodor
+# Alexandrescou vs Petr Brunclik, Plovdiv 2 Challenger) -- la ligne NON
+# APPARIEE de LIGNES_REELLES_MATCHS : `id_market`, `ID_MATCH` et
+# `p1_is_home` tous NULL, l'etat de 737 lignes sur 1 153. Le match a bien
+# ete joue et collecte (190 points, 7-5 6-3), il n'a simplement jamais eu
+# de marche exchange. C'est le cas qui separe « pas de cotes parce que la
+# retention est passee » de « pas de cotes parce qu'il n'y en a jamais eu »
+# -- deux absences que confondre ferait accuser la collecte d'un trou
+# qu'elle n'a pas.
+LIGNES_REELLES_POINTS_NON_APPARIE = [
+    {"id": 195470, "day": date(2026, 8, 6), "event_id": "3807294",
+     "recv_ts": 1786031358.3813124, "score": "0-0", "points": "0-0",
+     "indicator": "0,0", "status": "InPlay"},
+    {"id": 196564, "day": date(2026, 8, 6), "event_id": "3807294",
+     "recv_ts": 1786038538.4482582, "score": "7-5,6-3", "points": "0-0",
+     "indicator": "1,0", "status": "InPlay"},
+]

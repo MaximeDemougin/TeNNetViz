@@ -208,15 +208,29 @@ def figure_cotes(serie):
     return fig
 
 
-def graphique_cotes(serie, jeux) -> None:
-    """Le graphique, ou le message qui dit pourquoi il n'y en a pas."""
+#: Le motif PAR DEFAUT d'une courbe absente : la rencontre n'a jamais eu de
+#: marche exchange. C'est le cas majoritaire en direct, et le seul que ce
+#: module puisse constater tout seul.
+SANS_MARCHE = "Ce match n'a pas de marché apparié : score seul."
+
+
+def graphique_cotes(serie, jeux, absence: str | None = None) -> None:
+    """Le graphique, ou le message qui dit pourquoi il n'y en a pas.
+
+    ``absence`` laisse l'APPELANT expliquer une absence que lui seul peut
+    expliquer. Une serie vide se lit « pas de marche apparie » pour un match
+    du direct, mais « la retention de ``live_series`` ne remonte pas jusqu'a
+    ce match » pour une archive : afficher le premier motif sur le second
+    accuserait la collecte d'un trou qu'elle n'a pas. Un motif faux est pire
+    qu'un motif absent -- il envoie chercher au mauvais endroit.
+    """
     try:
         fig = figure_cotes(serie)
     except Exception:
         st.error("Impossible d'afficher le graphique de cotes pour ce match.")
         return
     if fig is None:
-        st.info("Ce match n'a pas de marché apparié : score seul.")
+        st.info(absence or SANS_MARCHE)
         return
     st.plotly_chart(fig, use_container_width=True,
                     config={"displayModeBar": False})
@@ -289,15 +303,21 @@ def point_par_point(serie, m) -> None:
     )
 
 
-def afficher(m, serie, maintenant: float) -> None:
+def afficher(m, serie, maintenant: float, absence_cotes: str | None = None) -> None:
     """Le detail complet. ``m`` est une ligne de ``live_now``, ``serie`` sa
-    serie temporelle -- deja lues et protegees par l'appelant."""
+    serie temporelle -- deja lues et protegees par l'appelant.
+
+    ``absence_cotes`` est le motif a afficher a la place de la courbe quand
+    il n'y en a pas et que l'appelant en sait la raison (voir
+    ``graphique_cotes``). Par defaut, ce module dit ce qu'il peut constater
+    seul : pas de marche apparie.
+    """
     bandeau_score(m)
     bandeau_cotes(m)
     bandeau_fraicheur(m, maintenant)
     onglets = st.tabs(["Cotes", "Statistiques", "Récit des jeux", "Point par point"])
     with onglets[0]:
-        graphique_cotes(serie, None)
+        graphique_cotes(serie, None, absence_cotes)
     with onglets[1]:
         bandeau_statistiques(m)
     with onglets[2]:
