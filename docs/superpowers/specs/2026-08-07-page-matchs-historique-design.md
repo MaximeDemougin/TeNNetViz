@@ -55,10 +55,24 @@ correction. Le gain est réel et mesuré ; le reste ne l'est pas.
 | `live_inplay_markets` | 455 | 10 jours | les marchés vus sans match apparié |
 | `live_series` | 45 178 | **2,6 jours** | les cotes — **limite dure** |
 
-**La limite qui compte** : `live_series` ne garde que ~2,6 jours. Un match
-ancien aura son point par point mais **pas sa courbe de cotes**. La page doit
-le DIRE quand c'est le cas, pas afficher un graphique vide — une absence
-silencieuse se lit comme une panne.
+**La limite qui compte, et ce qu'elle n'est PAS** : `live_series` ne couvre que
+~2,6 jours. Un match ancien aura son point par point mais **pas sa courbe de
+cotes**. La page doit le DIRE quand c'est le cas, pas afficher un graphique
+vide — une absence silencieuse se lit comme une panne.
+
+**Ce n'est pas une perte de donnée, c'est une limite d'ACCES.** Les cotes de
+ces matchs existent, dans les fichiers `ticks-*.ndjson.gz` sur le disque du
+VPS (5 jours au 2026-08-07, aucune purge automatique, 62 Go libres pour
+25-40 Mo/jour). Mais **cette page tourne sur Streamlit Community Cloud, qui
+n'a pas ce disque** : elle ne peut lire que la base. D'ou la limite.
+
+**Et cela ne contraint EN RIEN la modelisation**, qui se fait cote PoC, sur les
+fichiers bruts. Ne pas lire ce paragraphe comme « les cotes anciennes sont
+perdues » : elles ne le sont pas. Ce qui limite un modele aujourd'hui n'est pas
+une retention mais l'AGE de la collecte -- 10 jours de matchs, 5 jours de
+carnet -- contre les ~2 700 matchs que la puissance exige (§3.1 du document de
+reprise du PoC). Au rythme mesure de ~115 matchs/jour, c'est trois a quatre
+semaines d'accumulation, pas un obstacle de conception.
 
 `live_matches` porte `ID_MATCH`, la clé de production : un match passé est donc
 joignable au vrai résultat, et potentiellement aux paris. **Hors périmètre ici**,
