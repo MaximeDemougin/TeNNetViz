@@ -284,6 +284,19 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
                 )
             df_display["Semaine_key"] = week_start.dt.strftime("%Y%m%d").astype(int)
 
+        if group_by == "Jour":
+            # Une cle temporelle REELLE, calculee avant que `Date` ne devienne
+            # du texte quelques lignes plus bas. Le tri se faisait jusqu'ici
+            # sur cette colonne formatee : juste par accident, parce que
+            # `%Y-%m-%d` se trie pareil en texte et en date. Le jour ou ce
+            # format change (« 05/08/2026 »), l'ordre devient faux SANS
+            # qu'aucun message ne le dise -- c'est le piege que cette cle
+            # supprime. Meme forme que `Mois_key` et `Semaine_key`, en
+            # entier NULLABLE : une date absente ne doit pas faire lever.
+            df_display["Jour_key"] = (
+                df_display["Date"].dt.strftime("%Y%m%d").astype("Int64")
+            )
+
         if group_by == "Jour de la semaine":
             day_names_fr = {
                 0: "Lundi",
@@ -356,6 +369,8 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
             agg_extra["Semaine_key"] = ("Semaine_key", "min")
         if "Jour_semaine_key" in df_display.columns:
             agg_extra["Jour_semaine_key"] = ("Jour_semaine_key", "min")
+        if "Jour_key" in df_display.columns:
+            agg_extra["Jour_key"] = ("Jour_key", "min")
 
         grouped = (
             df_display.groupby(group_col)
@@ -394,11 +409,18 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
         except Exception:
             grouped["ROI_attendu"] = 0.0
 
-        # If we aggregated a sort key, use it; otherwise sort by total gains
+        # If we aggregated a sort key, use it; otherwise sort by total gains.
+        # Les regroupements DATES (mois, semaine, jour) vont du plus recent au
+        # plus ancien -- la regle de toute l'application. « Jour de la
+        # semaine » n'est PAS une date : c'est un cycle de sept categories, et
+        # il garde son ordre naturel, du lundi au dimanche.
+        _tri = dict(ascending=False, kind="stable", na_position="last")
         if "Mois_key" in grouped.columns:
-            grouped = grouped.sort_values(by="Mois_key", ascending=False)
+            grouped = grouped.sort_values(by="Mois_key", **_tri)
         elif "Semaine_key" in grouped.columns:
-            grouped = grouped.sort_values(by="Semaine_key", ascending=False)
+            grouped = grouped.sort_values(by="Semaine_key", **_tri)
+        elif "Jour_key" in grouped.columns:
+            grouped = grouped.sort_values(by="Jour_key", **_tri)
         elif "Jour_semaine_key" in grouped.columns:
             grouped = grouped.sort_values(by="Jour_semaine_key", ascending=True)
         else:
@@ -482,9 +504,11 @@ def render_grouped_table(bets_data: pd.DataFrame, unit_mode: bool = False) -> No
         display_df["Cote moyenne"] = display_df["Cote moyenne"].astype(float)
         display_df["ROI attendu"] = display_df["ROI attendu"].astype(float)
 
-        # Sort by group if needed
-        if group_by == "Jour":
-            display_df = display_df.sort_values(by=group_by, ascending=False)
+        # PAS de tri ici. L'ordre vient de `grouped` (cle temporelle
+        # `Jour_key` plus haut) et `display_df` n'en est qu'une projection.
+        # Le regroupement « Jour » se retriait ici sur la colonne AFFICHEE,
+        # du texte `%Y-%m-%d` : juste par accident du format, faux le jour ou
+        # il change.
 
         def gain_color(val):
             color = "#32b296" if val > 0 else "#e04e4e"

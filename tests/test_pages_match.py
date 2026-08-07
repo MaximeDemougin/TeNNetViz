@@ -11,6 +11,7 @@ import pandas as pd
 from streamlit.testing.v1 import AppTest
 
 from fixtures_reelles import (
+    CHRONOLOGIE_REELLE,
     LIGNE_REELLE_MATCH_AUTRE_LIGUE,
     LIGNE_REELLE_POINT_FINAL,
     LIGNES_REELLES_MATCHS,
@@ -100,6 +101,14 @@ def point_par_point(at):
     return None
 
 
+def recit_des_jeux(at):
+    """Le tableau du recit jeu par jeu, retrouve par ses COLONNES."""
+    for d in at.dataframe:
+        if {"jeu", "service", "issue"} <= set(d.value.columns):
+            return d.value
+    return None
+
+
 def test_un_score_nan_affiche_un_tiret_pas_le_mot_nan(monkeypatch):
     matchs_df = pd.DataFrame([{
         "event_id": "evt-nan", "status": "InPlay",
@@ -185,6 +194,70 @@ def test_le_tableau_point_par_point_affiche_une_date_pas_des_secondes_epoch(monk
     assert pd.api.types.is_datetime64_any_dtype(tableau_pp["ts"])
     rendu = str(tableau_pp["ts"].iloc[0])
     assert "1785794036" not in rendu, f"epoch brut encore visible : {rendu!r}"
+
+
+def test_le_point_par_point_reste_du_plus_recent_au_plus_ancien(monkeypatch):
+    """L'intention EXISTANTE -- le dernier point en tete -- avec un tri qui
+    ne depend plus de l'ordre d'arrivee.
+
+    Le module inversait le tableau par `.iloc[::-1]`. Juste tant que la
+    lecture rend les releves dans l'ordre du temps ; faux des qu'elle ne le
+    fait plus, et `.iloc[::-1]` ne peut PAS le rattraper -- il ne sait rien
+    du temps, il retourne des positions. On donne donc les quatre lignes
+    REELLES de 3807291 dans un ordre MELANGE : le tableau doit rendre
+    l'ordre du temps, decroissant.
+
+    Les quatre scores sont distincts (0-0, 0-1, 0-2, 3-6/6-6), donc aucun
+    repliement n'intervient et une permutation se voit ligne a ligne.
+    """
+    melangee = SERIE_RECENTE.iloc[[2, 0, 3, 1]].reset_index(drop=True)
+    at = _niveau_2(monkeypatch, "3807291", serie=melangee,
+                   points=POINTS_RECENTS)
+
+    tableau = point_par_point(at)
+    assert tableau is not None, "aucun tableau point par point"
+    assert list(tableau["score"]) == ["3-6,6-6", "0-2", "0-1", "0-0"], \
+        tableau.to_dict("records")
+    # Les horodatages eux-memes decroissent -- le score seul pourrait
+    # coincider par hasard sur un match ou il ne bouge pas.
+    assert list(tableau["ts"]) == sorted(tableau["ts"], reverse=True), \
+        tableau.to_dict("records")
+
+
+def test_le_recit_des_jeux_est_du_plus_recent_au_plus_ancien(monkeypatch):
+    """Meme regle sur le recit : le dernier jeu joue en tete.
+
+    La chronologie REELLE de Xi Luo vs Meng Yi Chen est donnee dans un
+    ordre MELANGE, pour la meme raison que ci-dessus : `.iloc[::-1]`
+    rendrait alors n'importe quoi.
+    """
+    import json
+
+    matchs_df = pd.DataFrame([{
+        "event_id": "evt-recit", "status": "InPlay",
+        "participant1": "Xi Luo", "participant2": "Meng Yi Chen",
+        "league": "W15 Test", "score": "1-3", "points": "0-0", "server": None,
+        "updated_ts": time.time(),
+        "chronologie": json.dumps([CHRONOLOGIE_REELLE[i] for i in (2, 0, 3, 1)]),
+    }])
+    _mock_lecteur(monkeypatch, matchs_df, pd.DataFrame())
+    at = AppTest.from_file("pages/match.py", default_timeout=30)
+    at.session_state["logged_in"] = True
+    at.session_state["ID_USER"] = 1
+    at.query_params["event_id"] = "evt-recit"
+    at.run()
+    assert not at.exception, at.exception
+
+    tableau = recit_des_jeux(at)
+    assert tableau is not None, "aucun tableau de recit"
+    assert list(tableau["jeu"]) == [4, 3, 2, 1], tableau.to_dict("records")
+    # Le service ALTERNE et les issues ne sont pas toutes egales : les deux
+    # colonnes suivent leur jeu, elles ne sont pas triees a part.
+    assert list(tableau["service"]) == ["Meng Yi Chen", "Xi Luo",
+                                        "Meng Yi Chen", "Xi Luo"], \
+        tableau.to_dict("records")
+    assert list(tableau["issue"]) == ["BREAK", "BREAK", "tenu", "BREAK"], \
+        tableau.to_dict("records")
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -339,6 +412,65 @@ def test_le_taux_de_la_liste_n_est_PAS_celui_du_bilan(monkeypatch):
     # Le bilan, lui, garde SA valeur et SON denominateur.
     par_label = {m.label: m.value for m in at.metric}
     assert [v for k, v in par_label.items() if "Appariement" in k] == ["65,3 %"]
+
+
+def test_la_liste_des_matchs_est_du_plus_recent_au_plus_ancien(monkeypatch):
+    """La regle de toute l'application, sur le tableau de la liste.
+
+    L'entree est deliberement MELANGEE : `charger_matchs_passes` demande
+    bien `ORDER BY day DESC, start_ts DESC`, mais un tableau qui se
+    contenterait de recopier son entree afficherait n'importe quoi le jour
+    ou la lecture change (un filtre, un cache, un regroupement, une autre
+    source). L'ordre doit etre garanti PAR la mise en forme.
+
+    Les six lignes REELLES discriminent a DEUX niveaux : cinq journees
+    distinctes du 2 au 6 aout, et DEUX lignes le 6 aout dont les heures de
+    debut different (08:00 pour Dzumhur, 09:00 pour Alexandrescou). Un tri
+    qui oublierait la seconde cle passerait le premier niveau et raterait
+    celui-la.
+
+    LE MELANGE N'EST PAS QUELCONQUE : les deux lignes du 6 aout arrivent
+    dans l'ordre CROISSANT (08:00 avant 09:00). Le tri etant stable, un tri
+    sur la seule journee les laisserait dans cet ordre-la -- donc faux. Le
+    melange precedent les donnait deja dans le bon ordre et la mutation
+    « cle d'heure perdue » y survivait, verte.
+    """
+    melange = pd.DataFrame(LIGNES_REELLES_MATCHS).iloc[[3, 0, 4, 2, 5, 1]]
+    at = _niveau_1(monkeypatch, matchs=melange.reset_index(drop=True))
+
+    table = liste_des_matchs(at)
+    assert list(table["Jour"]) == ["2026-08-06", "2026-08-06", "2026-08-05",
+                                   "2026-08-04", "2026-08-03", "2026-08-02"], \
+        table.to_dict("records")
+    # A journee egale, l'heure de debut DECROIT elle aussi.
+    assert list(table["Début"])[:2] == ["09:00", "08:00"], \
+        table.to_dict("records")
+    # Et les colonnes restent SOLIDAIRES de leur ligne : trier le seul
+    # « Jour » sans emporter le reste melangerait les matchs entre les jours.
+    assert table["Match"].iloc[0].startswith("Yannick"), \
+        table.to_dict("records")
+    assert table["Identifiants"].iloc[0] == "3807294", table.to_dict("records")
+    # La colonne « Apparié » suit elle aussi : elle est calculee a part, sur
+    # une Serie -- si le tri arrive apres, elle se decale d'un cran et le
+    # match non apparie s'affiche comme apparie.
+    assert table["Apparié"].iloc[0] == "non", table.to_dict("records")
+    assert table["Apparié"].iloc[1] == "oui", table.to_dict("records")
+
+
+def test_une_ligne_SANS_journee_ne_prend_pas_la_tete_de_la_liste(monkeypatch):
+    """`day` absente : sans `na_position`, pandas la pose ou il veut. Une
+    absence ne peut pas occuper la place de la journee la plus recente --
+    ni faire lever la page."""
+    sans_jour = dict(LIGNES_REELLES_MATCHS[0])
+    sans_jour.update({"day": None, "start_ts": float("nan"),
+                      "event_id": "9999999", "match_id": None})
+    at = _niveau_1(
+        monkeypatch,
+        matchs=pd.DataFrame([sans_jour] + LIGNES_REELLES_MATCHS),
+    )
+    table = liste_des_matchs(at)
+    assert table["Jour"].iloc[0] == "2026-08-06", table.to_dict("records")
+    assert table["Jour"].iloc[-1] == "—", table.to_dict("records")
 
 
 def test_la_liste_ne_dit_jamais_nan(monkeypatch):

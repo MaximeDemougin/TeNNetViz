@@ -254,12 +254,20 @@ def bandeau_statistiques(m) -> None:
 
 
 def bandeau_recit(m) -> None:
-    """Le recit jeu par jeu, avec les BREAKS nommes par la source.
+    """Le recit jeu par jeu, LE DERNIER JEU EN TETE, avec les BREAKS nommes
+    par la source.
 
     Les breaks ne sont pas deduits : ``evenement_de_score`` refuse de le faire
     parce qu'ils exigent de savoir qui servait, et que le champ serveur de la
     source se contredit dans 13 % des jeux. La chronologie du flux pousse, elle,
     ecrit « holds » ou « breaks ».
+
+    Le sens de lecture n'a pas change -- il etait deja inverse -- mais le tri
+    l'est : ``.iloc[::-1]`` retournait des POSITIONS, ce qui ne vaut que tant
+    que la source rend ses jeux dans l'ordre. On trie sur ``jeu``, le numero
+    de jeu de la source (courant sur tout le match, cf.
+    ``Live/ws_tennis.jeux_de_chronologie``), et un jeu sans numero part en
+    fin de tableau plutot que de prendre la place du dernier joue.
     """
     jeux = chronologie(m.get("chronologie"))
     if not jeux:
@@ -273,12 +281,27 @@ def bandeau_recit(m) -> None:
     } for j in jeux]
     n_breaks = sum(1 for j in jeux if j.get("break"))
     st.caption(f"{len(jeux)} jeux, dont {n_breaks} break(s)")
-    st.dataframe(pd.DataFrame(lignes).iloc[::-1], hide_index=True, width="stretch",
+    table = pd.DataFrame(lignes).sort_values(
+        "jeu", ascending=False, kind="stable", na_position="last")
+    st.dataframe(table, hide_index=True, width="stretch",
                  height=min(320, 40 + 35 * len(lignes)))
 
 
 def point_par_point(serie, m) -> None:
-    """Un etat de jeu par ligne, avec les cotes de l'instant du point."""
+    """Un etat de jeu par ligne, LE DERNIER EN TETE, avec les cotes de
+    l'instant du point.
+
+    Le sens de lecture n'a pas change -- il etait deja inverse, et c'est
+    celui qu'on veut quand on suit un direct -- mais le tri l'est :
+    ``.iloc[::-1]`` retournait des POSITIONS, ce qui ne vaut que tant que la
+    lecture rend les releves dans l'ordre du temps. On trie sur ``ts``, et
+    sur le ``ts`` BRUT (secondes epoch) avant que ``en_datetime`` ne le mette
+    en forme -- l'ordre se decide sur la valeur, jamais sur son affichage.
+
+    ``kind="stable"`` : deux etats au meme horodatage gardent leur ordre
+    d'arrivee. ``na_position="last"`` : un releve sans horodatage part en
+    fin de tableau, il ne peut pas passer pour le dernier point joue.
+    """
     replie = points_uniques(serie)
     if replie.empty:
         st.caption("Aucun relevé pour ce match.")
@@ -291,8 +314,12 @@ def point_par_point(serie, m) -> None:
         f"l'instant du point. a = {_val(m, 'participant1', 'a')}, "
         f"b = {_val(m, 'participant2', 'b')}."
     )
+    vue = replie[[c for c in visibles if c in replie.columns]]
+    if "ts" in vue.columns:
+        vue = vue.sort_values("ts", ascending=False, kind="stable",
+                              na_position="last")
     st.dataframe(
-        en_datetime(replie[[c for c in visibles if c in replie.columns]].iloc[::-1]),
+        en_datetime(vue),
         width="stretch", hide_index=True,
         column_config={
             "back_odds_a": st.column_config.NumberColumn("back a", format="%.2f"),

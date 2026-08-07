@@ -429,9 +429,19 @@ else:
         + " - "
         + display_bf["loser_name"].astype(str)
     )
-    display_bf["Date"] = pd.to_datetime(
-        display_bf["tourney_date"], errors="coerce"
-    ).dt.strftime("%d/%m/%Y %H:%M")
+    # Du plus recent au plus ancien, comme tous les tableaux dates de
+    # l'application. Le tri porte sur la DATE, avant sa mise en forme :
+    # « 30/07/2026 » passe avant « 05/08/2026 » dans l'ordre alphabetique,
+    # donc trier la colonne affichee donnerait un ordre faux. Il fallait
+    # bien un tri : la requete est un `UNION ALL` de trois `SELECT` sans
+    # `ORDER BY` (data.load_future_matchs_missing_betfair), l'ordre affiche
+    # etait celui que la base voulait bien rendre. Une date absente part en
+    # fin de liste, elle ne peut pas passer pour la plus recente.
+    _date_bf = pd.to_datetime(display_bf["tourney_date"], errors="coerce")
+    display_bf = display_bf.assign(_tri=_date_bf).sort_values(
+        "_tri", ascending=False, kind="stable", na_position="last"
+    )
+    display_bf["Date"] = display_bf["_tri"].dt.strftime("%d/%m/%Y %H:%M")
     cols = [
         "Date",
         "compet",

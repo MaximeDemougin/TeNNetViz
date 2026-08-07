@@ -144,6 +144,69 @@ LIGNE_REELLE_BOOKS_FLUX_MORT = {
     "updated_ts": 1785796860.9963076,
 }
 
+# Chronologie REELLE d'un match (Xi Luo vs Meng Yi Chen, `event-update` du
+# 2026-08-04), telle que `live_now.chronologie` la porte : la sortie JSON de
+# `Live/ws_tennis.jeux_de_chronologie` sur la chronologie poussee par la
+# source. Reprise a l'identique de la fixture du PoC
+# (`Live/tests/test_ws_tennis.py::test_les_breaks_sont_LUS_et_non_deduits`),
+# ou elle est explicitement documentee comme PRELEVEE -- la version inventee
+# qui l'avait precedee etait physiquement impossible (elle violait
+# l'alternance de service, mesuree a 100 % sur 707 paires).
+#
+# Ce qu'elle DISCRIMINE pour un tableau de recit :
+# - les quatre `jeu` sont distincts (1, 2, 3, 4), donc une inversion se voit ;
+# - le service ALTERNE (0, 1, 0, 1), donc une ligne decalee d'un cran se voit ;
+# - les issues ne sont pas toutes egales (break, tenu, break, break), donc
+#   une permutation entre lignes se voit aussi sur cette colonne.
+# La base ne peut plus la fournir : `live_now` est ephemere (une seule ligne
+# au 2026-08-07, `chronologie` NULL) et n'est pas archivee.
+CHRONOLOGIE_REELLE = [
+    {"jeu": 1, "serveur": 0, "break": True},
+    {"jeu": 2, "serveur": 1, "break": False},
+    {"jeu": 3, "serveur": 0, "break": True},
+    {"jeu": 4, "serveur": 1, "break": True},
+]
+
+# ── Quatre rencontres REELLES, pour les tableaux DATES a l'anglaise ───
+#
+# Prelevees sur l'archive de la purge du 2026-08-06
+# (`/home/ubuntu/tennet_live_data/archive/purge_anterieur_2026-08-06/base/
+# live_matches.ndjson.gz`, 1 120 lignes) : `ID_MATCH`, noms, tournoi, circuit
+# et heure de debut sont ceux de la collecte. Le schema de production n'a pas
+# ete lu ; les champs qu'il porte seul (`round`, `surface`, `tourney_level`)
+# sont laisses ABSENTS plutot qu'inventes.
+#
+# Ce que ces quatre lignes DISCRIMINENT, et pourquoi il fallait celles-la :
+# les pages `alerts` et `future_matchs` affichent la date en `jj/mm/aaaa`,
+# un TEXTE qui se trie alphabetiquement. Sur ces quatre dates, l'ordre du
+# texte et l'ordre du temps ne coincident PAS -- ils sont meme presque
+# opposes :
+#
+#   ordre du TEMPS decroissant : 05/08, 02/08, 30/07, 28/07
+#   ordre du TEXTE decroissant : 30/07, 28/07, 05/08, 02/08
+#
+# Quatre dates du meme mois auraient laisse passer un tri sur le texte sans
+# qu'aucun test ne tombe. Les heures different aussi (00:00, 08:00, 00:00,
+# 00:30), donc un tri qui perdrait l'heure se verrait sur un jour double.
+MATCHS_REELS_A_VENIR = [
+    {"compet": "atp", "ID_MATCH": "hQjR703N",
+     "tourney_name": "Citi Open - Washington",
+     "winner_name": "Frances Tiafoe", "loser_name": "Terence Atmane",
+     "tourney_date": "2026-07-28 00:00:00"},
+    {"compet": "atp", "ID_MATCH": "lAcJ5FUF",
+     "tourney_name": "Samsun Challenger",
+     "winner_name": "Denis Yevseyev", "loser_name": "Vadym Ursu",
+     "tourney_date": "2026-07-30 08:00:00"},
+    {"compet": "atp", "ID_MATCH": "M7gzg51C",
+     "tourney_name": "Citi Open - Washington",
+     "winner_name": "Rafael Jodar", "loser_name": "Alejandro Tabilo",
+     "tourney_date": "2026-08-02 00:00:00"},
+    {"compet": "atp", "ID_MATCH": "Ma18wI8K",
+     "tourney_name": "National Bank Open - Montreal",
+     "winner_name": "Luciano Darderi", "loser_name": "Gabriel Diallo",
+     "tourney_date": "2026-08-05 00:30:00"},
+]
+
 # Contenu REEL de /home/ubuntu/tennet_live_data/heartbeat-publish.json,
 # ecrit par Live.supervise.Heartbeat cote PoC (publieur en service sur cette
 # machine), lu le 2026-08-03 a 20:48:55Z.

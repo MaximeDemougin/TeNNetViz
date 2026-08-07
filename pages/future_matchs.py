@@ -466,6 +466,19 @@ with st.expander("Tableau detaille", expanded=False):
         "Round",
     ]
     table = view[[c for c in export_cols if c in view.columns]].copy()
+    # Du plus recent au plus ancien, comme tous les tableaux dates de
+    # l'application. Le tri est POSE ICI et non dans `_build_match_rows`,
+    # dont la sortie sert AUSSI aux cartes : celles-ci se lisent dans l'ordre
+    # ou les matchs vont se jouer, et leur regroupement par tournoi (plus
+    # haut) impose deja son propre ordre croissant. Deux lectures de la meme
+    # donnee, deux ordres, chacun pose la ou il se voit.
+    #
+    # `Date` est encore un datetime a ce stade -- la mise en forme
+    # `DD/MM/YYYY` est faite par `column_config` a l'affichage, apres ce
+    # tri : c'est bien la valeur qui ordonne, jamais son texte.
+    if "Date" in table.columns:
+        table = table.sort_values("Date", ascending=False, kind="stable",
+                                  na_position="last")
     col_config = {
         "W_pred": st.column_config.NumberColumn("Pred W", format="%.2f"),
         "L_pred": st.column_config.NumberColumn("Pred L", format="%.2f"),

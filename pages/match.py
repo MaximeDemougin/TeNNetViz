@@ -217,16 +217,50 @@ def identifiants_du_match(groupes, ligne) -> str:
     return ",".join(groupes.get(str(cle), [])) or propre
 
 
+#: Les deux cles temporelles de la liste, dans l'ordre de priorite. Elles
+#: sont BRUTES -- `day` est une date, `start_ts` un epoch -- et non les
+#: colonnes affichees : « Jour » et « Début » sont du texte mis en forme, et
+#: « 09:00 » se trierait alphabetiquement, donc faux des qu'un format change.
+CLES_TEMPORELLES = ("day", "start_ts")
+
+
+def du_plus_recent(df) -> pd.DataFrame:
+    """Le meme tableau, de la journee la plus recente a la plus ancienne.
+
+    Le tri est FAIT ici et non herite de l'``ORDER BY`` du lecteur : celui-ci
+    demande deja `day DESC, start_ts DESC`, mais un affichage qui recopie
+    l'ordre de son entree se casse en silence des que la lecture change --
+    un cache, un regroupement, un filtre, une autre source.
+
+    `kind="stable"` : deux lignes de meme journee ET de meme heure gardent
+    leur ordre d'arrivee plutot que d'etre permutees au hasard d'un rendu a
+    l'autre. `na_position="last"` : une journee ABSENTE part en fin de
+    liste -- lui donner la premiere place reviendrait a la declarer la plus
+    recente sur la foi d'un trou.
+    """
+    cles = [c for c in CLES_TEMPORELLES if c in getattr(df, "columns", [])]
+    if not cles:
+        return df
+    return df.sort_values(cles, ascending=False, kind="stable",
+                          na_position="last")
+
+
 def tableau_liste(df) -> pd.DataFrame:
-    """La liste mise en forme : une ligne par (journee, identifiant).
+    """La liste mise en forme : une ligne par (journee, identifiant), la plus
+    recente EN TETE.
 
     Ce n'est PAS une ligne par match -- un match a cheval sur deux journees
     en produit deux, et la source attribue parfois deux identifiants a une
     meme rencontre. Le dire ici plutot que de laisser croire que 1 153
     lignes font 1 153 matchs.
+
+    Le tri passe AVANT `apparies()` : cette colonne-la se calcule sur une
+    Serie a part, et la trier apres la decalerait d'un cran -- le match non
+    apparie s'afficherait comme apparie.
     """
     if df is None or df.empty:
         return pd.DataFrame()
+    df = du_plus_recent(df)
     marques = apparies(df)
     groupes = identifiants_par_match(df)
     return pd.DataFrame({

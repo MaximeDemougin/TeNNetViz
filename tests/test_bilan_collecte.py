@@ -402,15 +402,40 @@ def test_chaque_cellule_du_tableau_porte_le_verdict_DE_SA_JOURNEE():
                 (PASTILLE_QA[ROUGE_QA], PASTILLE_QA[BLANC_QA])), cellule
 
 
-def test_le_tableau_se_lit_du_plus_ancien_au_plus_recent():
-    """C'est le sens dans lequel une tendance se lit, et c'est ce que dit
-    la legende sous le tableau. L'inverser rendrait la legende fausse."""
+def test_le_tableau_est_du_plus_recent_au_plus_ancien():
+    """La regle de toute l'application : la derniere journee EN TETE.
+
+    Le tableau se lisait dans l'autre sens jusqu'au 2026-08-07 (« c'est le
+    sens dans lequel une tendance se lit ») -- la tendance reste lisible a
+    l'envers, mais la journee qu'on vient chercher etait au dixieme rang.
+    Les dix journees REELLES du prelevement vont du 28 juillet au 6 aout :
+    dix valeurs distinctes, donc une inversion se voit sur les deux bouts
+    ET sur le tri complet.
+    """
     from bilan_collecte import tableau_bilan
 
     jours = list(tableau_bilan(BILAN_REEL)["Jour"])
-    assert jours[0] == "2026-07-28", jours
-    assert jours[-1] == "2026-08-06", jours
-    assert jours == sorted(jours), jours
+    assert jours[0] == "2026-08-06", jours
+    assert jours[-1] == "2026-07-28", jours
+    assert jours == sorted(jours, reverse=True), jours
+
+
+def test_le_tableau_reste_du_plus_recent_au_plus_ancien_sur_une_ENTREE_MELANGEE():
+    """Le tri doit etre FAIT ici, pas herite de l'``ORDER BY`` du lecteur.
+
+    `charger_bilan_qa` demande `ORDER BY day` -- l'ordre CROISSANT. Un
+    tableau qui se contenterait de recopier son entree passerait le test
+    precedent le jour ou ce `ORDER BY` deviendrait `DESC`, et casserait
+    silencieusement s'il redevenait croissant. On lui donne donc les memes
+    dix lignes REELLES dans un ordre melange : le resultat doit etre
+    identique.
+    """
+    from bilan_collecte import tableau_bilan
+
+    melange = BILAN_REEL.iloc[[4, 9, 0, 7, 2, 5, 1, 8, 3, 6]].reset_index(drop=True)
+    assert list(melange["day"]) != sorted(melange["day"], reverse=True)
+    assert list(tableau_bilan(melange)["Jour"]) == list(
+        tableau_bilan(BILAN_REEL)["Jour"])
 
 
 def test_la_colonne_des_inversions_naffiche_pas_un_zero_la_ou_rien_na_ete_compte():

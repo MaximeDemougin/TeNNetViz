@@ -134,11 +134,25 @@ def _delta(valeurs) -> str | None:
 
 
 def tableau_bilan(bilan: pd.DataFrame) -> pd.DataFrame:
-    """Le bilan mis en forme, une ligne par journee, dans l'ordre du temps.
+    """Le bilan mis en forme, une ligne par journee, LA PLUS RECENTE EN TETE.
 
-    Chronologique et non l'inverse : c'est le sens dans lequel une tendance
-    se lit, et c'est la tendance que ce tableau porte -- le taux de trou
-    tombe de 97 % a 51 % entre le 3 et le 5 aout.
+    Ce tableau se lisait dans l'autre sens jusqu'au 2026-08-07 -- « c'est le
+    sens dans lequel une tendance se lit ». Une tendance se lit aussi bien a
+    l'envers ; la journee qu'on vient chercher, elle, etait au dixieme rang.
+    Toute l'application affiche desormais ses tableaux datés du plus recent
+    au plus ancien, et un ecran qui ferait exception obligerait a se demander
+    a chaque fois dans quel sens on lit.
+
+    Le tri est FAIT ici et non herite : `charger_bilan_qa` demande
+    `ORDER BY day`, l'ordre CROISSANT, parce que `afficher` a besoin de la
+    derniere journee en `iloc[-1]` pour ses vignettes et de la suite
+    chronologique pour son ecart. C'est donc la mise en forme, elle seule,
+    qui retourne l'ordre -- et elle trie sur `day`, la vraie date, avant
+    qu'il ne devienne du texte.
+
+    Une journee SANS date (`NaT`) part en fin de tableau : la mettre en tete
+    lui donnerait la place de la journee la plus recente sur la foi d'une
+    absence.
 
     Chaque taux part avec sa pastille de verdict : le chiffre seul ne dit
     pas s'il est bon, et le seuil est dans l'en-tete de la colonne.
@@ -146,6 +160,9 @@ def tableau_bilan(bilan: pd.DataFrame) -> pd.DataFrame:
     if bilan is None or bilan.empty:
         return pd.DataFrame()
     juge = bilan_juge(bilan)
+    if "day" in juge.columns:
+        juge = juge.sort_values("day", ascending=False, kind="stable",
+                                na_position="last")
     sortie = pd.DataFrame()
     sortie["Jour"] = [str(j) for j in juge["day"]] if "day" in juge else ""
     sortie["Marchés vus en jeu"] = [
@@ -225,7 +242,7 @@ def afficher(bilan: pd.DataFrame) -> None:
 
     st.dataframe(tableau_bilan(bilan), hide_index=True, width="stretch")
     st.caption(
-        "Une ligne par journée, de la plus ancienne à la plus récente. "
+        "Une ligne par journée, de la plus récente à la plus ancienne. "
         "« pas de mesure » n'est pas « 0 % » : une journée sans marché vu "
         "en jeu n'a rien à mesurer."
     )
