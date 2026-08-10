@@ -1371,6 +1371,84 @@ def test_charger_serie_replie_les_horodatages_doubles():
     assert out.iloc[0]["book_odds_a"] == 1.85
 
 
+def test_deux_MATCHS_au_meme_instant_ne_se_replient_PAS():
+    """Le defaut du 2026-08-10, mesure contre TeNNet_test : la liste passait
+    les six matchs en cours a `charger_serie`, le publieur les ecrit tous
+    dans le meme cycle donc au MEME `ts`, et la fusion -- qui groupait sur
+    `ts` seul -- n'en gardait qu'un. 342 horodatages sur 439 etaient
+    partages, 62 % des lignes ecrasees, et la survivante empruntait ses
+    colonnes vides aux AUTRES matchs. Trois matchs sur six perdaient leur
+    fleche de mouvement, et l'une des trois restantes pointait a l'envers.
+    """
+    df = pd.DataFrame([
+        _pt(100.0, "0-0", "0-0", event_id="A", back_odds_a=3.10),
+        _pt(100.0, "1-6,1-2", "40-40", event_id="B", back_odds_a=10.00),
+        _pt(100.0, "6-4,0-1", "0-0", event_id="C", back_odds_a=1.34),
+    ])
+    out = fusionner_series(df)
+    assert len(out) == 3, "aucun match n'a le droit d'en absorber un autre"
+    assert set(out["event_id"]) == {"A", "B", "C"}
+    # Chacun garde SES cotes : le comblement des colonnes vides ne doit
+    # jamais traverser la frontiere d'un match.
+    par_id = out.set_index("event_id")["back_odds_a"].to_dict()
+    assert par_id == {"A": 3.10, "B": 10.00, "C": 1.34}
+
+
+def test_une_FAMILLE_declaree_se_replie_toujours():
+    """Le comportement du 2026-08-04 doit survivre : la source attribue
+    parfois deux `event_id` a une seule rencontre, l'un portant la cote
+    bookmaker que l'autre n'a pas. On garde le score le PLUS AVANCE et on
+    comble les trous avec l'autre vue -- mais seulement entre identifiants
+    qu'on a explicitement declares parents."""
+    df = pd.DataFrame([
+        _pt(100.0, "2-4", "0-0", event_id="1", book_odds_a=1.85),
+        _pt(100.0, "3-4", "0-15", event_id="2"),
+    ])
+    out = fusionner_series(df, famille=["1", "2"])
+    assert len(out) == 1
+    assert out.iloc[0]["score"] == "3-4", "le score le plus avance"
+    assert out.iloc[0]["book_odds_a"] == 1.85, "la cote book de l'AUTRE vue"
+
+
+def test_un_identifiant_HORS_famille_reste_a_part():
+    """Declarer une famille n'ouvre pas la porte a tout le reste : un match
+    etranger present dans le meme tableau garde ses lignes."""
+    df = pd.DataFrame([
+        _pt(100.0, "2-4", "0-0", event_id="1"),
+        _pt(100.0, "3-4", "0-15", event_id="2"),
+        _pt(100.0, "6-0", "40-0", event_id="etranger"),
+    ])
+    out = fusionner_series(df, famille=["1", "2"])
+    assert len(out) == 2, out.to_dict("records")
+    assert set(out["event_id"]) == {"2", "etranger"}
+
+
+def test_sans_colonne_event_id_la_fusion_groupe_sur_le_temps():
+    """Une serie sans identifiant ne permet PAS de distinguer deux matchs :
+    on ne peut alors que grouper sur l'instant. C'est le seul cas ou le
+    comportement d'avant subsiste, et il ne se produit jamais en service --
+    `charger_serie` et `charger_mouvements` lisent toujours `event_id`."""
+    df = pd.DataFrame([_pt(100.0, "2-4", "0-0"), _pt(100.0, "3-4", "0-15")])
+    out = fusionner_series(df)
+    assert len(out) == 1
+    assert out.iloc[0]["score"] == "3-4"
+
+
+def test_charger_serie_declare_la_famille_qu_il_a_demandee():
+    """`charger_serie` promet « la serie d'UN match » : les identifiants
+    qu'il recoit sont, par construction, une famille."""
+    doubles = pd.DataFrame([
+        _pt(100.0, "2-4", "0-0", event_id="1", book_odds_a=1.85),
+        _pt(100.0, "3-4", "0-15", event_id="2"),
+        _pt(200.0, "3-4", "30-15", event_id="1"),
+    ])
+    out = charger_serie("1,2", lecteur=lambda schema, query: doubles)
+    assert len(out) == 2, out.to_dict("records")
+    assert out.iloc[0]["score"] == "3-4"
+    assert out.iloc[0]["book_odds_a"] == 1.85
+    assert list(out["ts"]) == [100.0, 200.0], "la serie reste dans l'ordre du temps"
+
+
 # --- La liste : circuit, tournoi, heure, et seulement les matchs commences ---
 
 

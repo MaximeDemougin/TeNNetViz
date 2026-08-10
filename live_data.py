@@ -817,7 +817,12 @@ def charger_serie(event_id, lecteur=None) -> pd.DataFrame:
     # Chaque identifiant ecrit sa ligne au MEME horodatage a chaque cycle :
     # sans ce repliement, le tableau point par point montrerait deux lignes
     # par instant, avec des scores en desaccord jusqu'a un jeu entier.
-    return fusionner_series(df)
+    #
+    # La famille est DECLAREE : cette fonction promet « la serie d'un match »,
+    # donc les identifiants qu'elle a recus sont parents par construction.
+    # Sans cette declaration la fusion ne replierait plus rien -- c'est le
+    # sens meme de la correction du 2026-08-10.
+    return fusionner_series(df, famille=surs)
 
 
 # ── Les tables du PASSE ───────────────────────────────────────────────
@@ -1287,13 +1292,13 @@ def avancement(score, points) -> tuple:
     return (jeux, pts)
 
 
-def fusionner_series(df: pd.DataFrame) -> pd.DataFrame:
-    """Une ligne par INSTANT, quand la serie vient de plusieurs event_id.
+def fusionner_series(df: pd.DataFrame, famille=None) -> pd.DataFrame:
+    """Une ligne par INSTANT, pour les identifiants qu'on a declares parents.
 
-    ``charger_serie`` lit desormais tous les identifiants d'un meme match
-    (cf. ``fusionner_doublons``). Chacun ecrit sa propre ligne a CHAQUE cycle
-    du publieur, donc au MEME horodatage : sans repliement, le tableau point
-    par point affiche deux lignes par instant, portant des scores differents.
+    ``charger_serie`` lit tous les identifiants d'un meme match (cf.
+    ``fusionner_doublons``). Chacun ecrit sa propre ligne a CHAQUE cycle du
+    publieur, donc au MEME horodatage : sans repliement, le tableau point par
+    point affiche deux lignes par instant, portant des scores differents.
     Constate a l'usage le 2026-08-04.
 
     Mesure sur les deux matchs concernes : les deux vues sont d'accord sur
@@ -1306,13 +1311,39 @@ def fusionner_series(df: pd.DataFrame) -> pd.DataFrame:
     On garde donc, par instant, le score le PLUS AVANCE, et pour chaque autre
     colonne la premiere valeur renseignee. Jamais de moyenne : deux vues d'un
     meme carnet ne se moyennent pas, l'une est simplement en retard.
+
+    ``famille`` DECLARE quels identifiants sont parents, et c'est la seule
+    facon de le savoir : ``live_series`` ne porte aucune colonne « match »,
+    l'appartenance vient de ``live_now.event_ids`` et de nulle part ailleurs.
+    Sans declaration, deux identifiants distincts ne se replient JAMAIS.
+
+    C'est la correction du defaut du 2026-08-10 : la fonction groupait sur
+    ``ts`` SEUL, ce qui revenait a tenir un horodatage commun pour une
+    appartenance commune. La page « En direct » lui passait les six matchs en
+    cours d'un coup ; le publieur les ecrit dans le meme cycle, donc au meme
+    instant. Mesure contre ``TeNNet_test`` : 342 horodatages sur 439 partages
+    entre plusieurs matchs, 726 lignes sur 1165 ecrasees -- 62 % -- et les
+    survivantes comblaient leurs colonnes vides avec les valeurs d'un AUTRE
+    match. Trois matchs sur six perdaient leur fleche de mouvement, et l'une
+    des trois restantes pointait a l'envers.
     """
     if df is None or df.empty or "ts" not in df.columns:
         return df if df is not None else pd.DataFrame()
-    if not df["ts"].duplicated().any():
+    declaree = {str(e) for e in (famille or [])}
+    if "event_id" in df.columns:
+        # Les membres declares partagent la cle vide : eux seuls se replient
+        # entre eux. Tout autre identifiant garde la sienne, donc sa ligne.
+        parente = df["event_id"].map(
+            lambda e: "" if str(e) in declaree else str(e))
+    else:
+        # Sans identifiant, rien ne permet de distinguer deux matchs : on ne
+        # peut que grouper sur l'instant. N'arrive jamais en service.
+        parente = pd.Series("", index=df.index)
+    travail = df.assign(_parente=parente)
+    if not travail.duplicated(subset=["_parente", "ts"]).any():
         return df.reset_index(drop=True)
     sorties = []
-    for _, groupe in df.groupby("ts", sort=True):
+    for _, groupe in travail.groupby(["_parente", "ts"], sort=True):
         if len(groupe) == 1:
             sorties.append(groupe.iloc[0])
             continue
@@ -1322,14 +1353,21 @@ def fusionner_series(df: pd.DataFrame) -> pd.DataFrame:
         ]
         base = groupe.iloc[rangs.index(max(rangs))].copy()
         for colonne in groupe.columns:
-            if colonne in ("score", "points", "ts", "event_id"):
+            if colonne in ("score", "points", "ts", "event_id", "_parente"):
                 continue
             if pd.isna(base.get(colonne)):
                 renseignees = groupe[colonne].dropna()
                 if not renseignees.empty:
                     base[colonne] = renseignees.iloc[0]
         sorties.append(base)
-    return pd.DataFrame(sorties).reset_index(drop=True)
+    # Le tri sur `ts` est desormais EXPLICITE. Il l'etait implicitement tant
+    # qu'on groupait sur `ts` seul ; grouper d'abord par parente le perdrait,
+    # et les series de deux identifiants doivent s'entrelacer dans le temps
+    # -- sans quoi la courbe revient en arriere au milieu du graphique.
+    return (pd.DataFrame(sorties)
+            .drop(columns=["_parente"])
+            .sort_values("ts", kind="stable")
+            .reset_index(drop=True))
 
 
 def competition(tour_type, league) -> str:
