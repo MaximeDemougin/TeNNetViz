@@ -17,6 +17,7 @@ import time
 import streamlit as st
 
 from detail_match import afficher
+from flux_continu import CSS_FLUX
 from liste_dense import (
     CSS, cle_bouton, cle_carte, cle_ligne, entete_competition,
     entete_tournoi, lignes,
@@ -41,6 +42,13 @@ st.title("En direct")
 if not st.session_state.get("logged_in", False):
     st.write("Connectez-vous pour voir les matchs en direct.")
     st.stop()
+
+# La feuille du flux continu et celle de la liste sont injectees UNE fois,
+# au chargement. Elles vivaient dans le fragment, donc reemises a chaque
+# cycle : un `<style>` de plus toutes les quinze secondes, pour un resultat
+# identique.
+st.markdown(CSS_FLUX, unsafe_allow_html=True)
+st.markdown(CSS, unsafe_allow_html=True)
 
 CADENCES = {"5 s": 5, "15 s": 15, "60 s": 60, "Manuel": None}
 choix = st.sidebar.selectbox(
@@ -195,7 +203,6 @@ def zone_donnees():
     # que dans session_state (le cookie est commente dans pages/login.py),
     # le rechargement DECONNECTAIT. Constate a l'usage.
     ouvert = str(st.session_state.get("match_ouvert") or "")
-    st.markdown(CSS, unsafe_allow_html=True)
     if not en_cours.empty:
         st.caption(
             f"{len(en_cours)} match(s) en cours. Cliquez une ligne pour ouvrir "

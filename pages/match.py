@@ -30,6 +30,7 @@ import streamlit as st
 
 from bilan_collecte import afficher as afficher_bilan
 from detail_match import afficher
+from flux_continu import CSS_FLUX
 from live_data import (
     charger_bilan_qa,
     charger_matchs,
@@ -522,6 +523,9 @@ def detail_archive(event_id, maintenant: float) -> None:
 
 
 event_id = st.query_params.get("event_id")
+
+# Le detail se rafraichit tout seul lui aussi : meme grisement, meme remede.
+st.markdown(CSS_FLUX, unsafe_allow_html=True)
 
 niveau_1()
 
