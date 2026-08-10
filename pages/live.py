@@ -17,7 +17,7 @@ import time
 import streamlit as st
 
 from detail_match import afficher
-from flux_continu import CSS_FLUX
+from flux_continu import CSS_FLUX, bandeau_battement
 from liste_dense import (
     CSS, cle_bouton, cle_carte, cle_ligne, entete_competition,
     entete_tournoi, lignes,
@@ -204,10 +204,9 @@ def zone_donnees():
     # le rechargement DECONNECTAIT. Constate a l'usage.
     ouvert = str(st.session_state.get("match_ouvert") or "")
     if not en_cours.empty:
-        st.caption(
-            f"{len(en_cours)} match(s) en cours. Cliquez une ligne pour ouvrir "
-            "son detail."
-        )
+        st.markdown(bandeau_battement(len(en_cours), maintenant),
+                    unsafe_allow_html=True)
+        st.caption("Cliquez une ligne pour ouvrir son detail.")
         # Le SENS du dernier mouvement de chaque prix. Une seule requete pour
         # toute la liste, SANS repli : `charger_serie` fusionnait, ce qui
         # coutait 289 ms des 341 du cycle -- et surtout ecrasait 62 % des

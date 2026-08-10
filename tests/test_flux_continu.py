@@ -7,7 +7,9 @@ Ces tests gardent des SELECTEURS INTERNES a Streamlit, releves dans le bundle
 qu'on visait et pourquoi.
 """
 
-from flux_continu import CSS_FLUX
+import pandas as pd
+
+from flux_continu import CSS_FLUX, bandeau_battement
 
 
 def test_la_feuille_neutralise_le_GRISEMENT():
@@ -27,3 +29,30 @@ def test_la_feuille_n_eteint_QUE_l_homme_qui_court():
     for ligne in CSS_FLUX.splitlines():
         if "stStatusWidget" in ligne and "display" in ligne:
             assert ":has(" in ligne, f"regle trop large : {ligne.strip()}"
+
+
+def test_le_bandeau_porte_l_HEURE_du_chargement():
+    """Supprimer le grisement supprime le seul signe que les donnees bougent.
+    L'heure affichee est celle du chargement REUSSI cote serveur : si le
+    cycle s'arrete, elle se fige, et ca se voit."""
+    html = bandeau_battement(6, 1786352606.0)
+    attendue = pd.to_datetime(1786352606.0, unit="s").strftime("%H:%M:%S")
+    assert attendue in html
+    assert "6" in html
+
+
+def test_le_bandeau_s_accorde_avec_la_colonne_HEURE_de_la_liste():
+    """Les deux doivent lire l'horodatage de la meme facon, sans quoi un
+    match paraitrait commencer apres l'heure affichee en tete de page."""
+    from liste_dense import _heure
+
+    assert _heure(1786352606.0)[:5] in bandeau_battement(1, 1786352606.0)
+
+
+def test_le_battement_rejoue_a_CHAQUE_cycle():
+    """Une animation posee sur un element que Streamlit RECREE a chaque cycle
+    rejoue a chaque cycle : c'est un battement. Une boucle infinie
+    (`animation-iteration-count: infinite`) tournerait aussi sur une page
+    morte et ne prouverait rien."""
+    assert "@keyframes battement" in CSS_FLUX
+    assert "infinite" not in CSS_FLUX

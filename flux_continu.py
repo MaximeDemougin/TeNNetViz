@@ -18,6 +18,10 @@ n'atterrisse que d'un cote -- la regle que ce depot tient deja pour
 `detail_match`.
 """
 
+import html
+
+import pandas as pd
+
 CSS_FLUX = """
 <style>
   /* Le grisement de Streamlit, eteint. L'ancien contenu reste PLEINEMENT
@@ -32,5 +36,38 @@ CSS_FLUX = """
      et l'avis de session perdue : le masquer en entier echangerait une gene
      contre un silence dangereux. */
   .stStatusWidget:has([data-testid="stStatusWidgetRunningIcon"]) { display: none; }
+
+  /* Le battement. Il joue UNE fois, a la creation de l'element -- donc une
+     fois par cycle. */
+  @keyframes battement {
+    0% { opacity: .2; } 12% { opacity: 1; } 100% { opacity: .2; }
+  }
+  .battement {
+    display: flex; align-items: baseline; gap: .5rem;
+    font-size: .82rem; opacity: .75; margin: 0 0 .5rem .1rem;
+  }
+  .battement u {
+    width: .5rem; height: .5rem; border-radius: 50%;
+    background: #32b296; text-decoration: none;
+    animation: battement 1s ease-out;
+  }
 </style>
 """
+
+
+def bandeau_battement(n_matchs: int, maintenant: float) -> str:
+    """Le signal de vie qui remplace le grisement.
+
+    Une pastille qui bat une fois par cycle et l'heure du dernier chargement
+    reussi. L'animation est posee sur un element que Streamlit RECREE a chaque
+    cycle : elle rejoue donc a chaque cycle, et seulement alors. Une boucle
+    infinie tournerait aussi sur une page morte, et ne dirait rien.
+
+    L'heure vient de `maintenant`, l'instant du chargement cote serveur, et
+    se lit avec le meme idiome que la colonne « heure » de la liste
+    (`liste_dense._heure`) : les deux doivent s'accorder, sans quoi un match
+    paraitrait commencer apres l'heure affichee en tete de page.
+    """
+    heure = pd.to_datetime(float(maintenant), unit="s").strftime("%H:%M:%S")
+    return (f'<div class="battement"><u></u><span>{html.escape(heure)}</span>'
+            f'<span>· {int(n_matchs)} match(s) en cours</span></div>')
