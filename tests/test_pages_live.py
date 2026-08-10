@@ -49,6 +49,15 @@ def html_liste(at, second=False):
     est REELLEMENT affiche, et non un calcul rejoue : rejouer la logique dans
     l'aide reviendrait a verifier que la page fait ce que le test refait,
     pas ce qu'elle montre.
+
+    ATTENTION : le HTML rendu inclut aussi les feuilles de style injectees
+    (CSS_FLUX, liste_dense.CSS) -- elles contiennent, comme SELECTEURS, du
+    texte qu'un test peut vouloir compter comme SIGNAL ("hausse"/"baisse" x4
+    chacun dans liste_dense.CSS, ".liste-dense .neuf" dans CSS_FLUX). Un
+    comptage de sous-chaine naif part donc d'un bruit non nul, jamais de
+    zero -- deja constate une fois (test_les_six_matchs_gardent_leur_FLECHE
+    passait a tort sur ce bruit seul). Compter la BALISE rendue, pas le nom
+    de classe brut.
     """
     morceaux = [str(m.value) for m in at.markdown if "liste-dense" in str(m.value)]
     if not second:
@@ -1144,10 +1153,17 @@ def test_les_TOURNOIS_restent_ordonnes_par_leur_premier_match(monkeypatch):
 
 
 def _cellules(at, classe):
-    """Le contenu brut d'une cellule, match par match, tel qu'AFFICHE."""
+    """Le contenu brut d'une cellule, match par match, tel qu'AFFICHE.
+
+    Le `<span>` interne accepte des ATTRIBUTS (`[^>]*`), pas seulement la
+    balise nue : un point marque rend `<span class="bp">` ou
+    `<span class="neuf">`, jamais `<span>` seul. La forme stricte les
+    ignorait silencieusement -- un sous-comptage qui ne fait echouer aucune
+    assertion, juste mesurer moins que ce qui est reellement affiche."""
     import re
     h = html_liste(at)
-    return re.findall(rf'<span class="{classe}">((?:<span>[^<]*</span>)*)</span>', h)
+    return re.findall(
+        rf'<span class="{classe}">((?:<span[^>]*>[^<]*</span>)*)</span>', h)
 
 
 def test_le_BACK_affiche_est_bien_la_cote_back(monkeypatch):
@@ -1616,6 +1632,15 @@ def test_les_six_matchs_gardent_leur_FLECHE(monkeypatch):
     On regarde le HTML REELLEMENT pousse, pas un calcul rejoue : rejouer
     mouvements_de_prix() dans le test verifierait que la page fait ce que le
     test refait, pas ce qu'elle montre.
+
+    Le seuil etait `>= 6` : chaque match qui garde son identite porte DEUX
+    fleches de chaque sens (back ET lay du meme joueur bougent ensemble dans
+    cette fixture), donc six matchs intacts en portent 12. Le symptome
+    mesure en service -- "trois matchs sur six perdaient leur fleche" -- en
+    laissait trois intacts, donc 3 x 2 = 6 : exactement le seuil. `>= 6`
+    passait donc sur le symptome meme qu'il devait attraper, et n'aurait
+    tourne au rouge qu'avec quatre matchs detruits sur six. Seul le compte
+    EXACT protege le site d'appel.
     """
     maintenant = time.time()
     matchs = pd.DataFrame([
@@ -1653,10 +1678,16 @@ def test_les_six_matchs_gardent_leur_FLECHE(monkeypatch):
     # qui ne peut venir que d'un prix reellement marque.
     hausse = html.count('<i class="b hausse">') + html.count('<i class="l hausse">')
     baisse = html.count('<i class="b baisse">') + html.count('<i class="l baisse">')
-    assert hausse >= 6, \
-        f"les six matchs doivent porter une hausse (back/lay A montent), vu {hausse}"
-    assert baisse >= 6, \
-        f"les six matchs doivent porter une baisse (back/lay B descendent), vu {baisse}"
+    # Compte EXACT, pas un seuil : chacun des SIX matchs porte SES DEUX
+    # hausses (back et lay du joueur A) et SES DEUX baisses (back et lay du
+    # joueur B) -- 12 de chaque. Un seuil `>= 6` passait deja sur le
+    # symptome production (trois matchs sur six perdaient leur fleche, donc
+    # trois survivants x 2 = 6) ; seul le compte exact protege le site
+    # d'appel contre une fusion qui replierait ne serait-ce que deux matchs.
+    assert hausse == 12, \
+        f"chacun des six matchs doit porter ses deux hausses, vu {hausse}"
+    assert baisse == 12, \
+        f"chacun des six matchs doit porter ses deux baisses, vu {baisse}"
 
 
 # --- Le surlignage local (task 6) : la memoire de session ne doit pas
@@ -1684,3 +1715,58 @@ def test_vu_en_cours_est_REINITIALISE_quand_la_liste_se_vide(monkeypatch):
     assert not at.exception
     assert at.session_state["vu_en_cours"] == {}, \
         "le snapshot perime doit etre efface, pas laisse tel quel"
+
+
+def test_l_ORDRE_marquer_puis_stocker_est_VERROUILLE(monkeypatch):
+    """`pages/live.py` doit appeler `marquer_changements()` AVANT
+    `st.session_state["vu_en_cours"] = instantane(...)` : permuter ces deux
+    lignes rend le surlignage silencieusement mort -- `marquer_changements`
+    compare alors la structure a l'instantane qu'elle vient tout juste de
+    produire, donc a elle-meme, et rien ne differe jamais. Aucun test de
+    `tests/test_flux_continu.py` ne peut le voir : ils testent les deux
+    fonctions ISOLEMENT, jamais le site d'appel dans l'ordre ou il les
+    invoque -- exactement le trou que ce test protege.
+
+    Le compte de reference (`base`, ci-dessous) N'EST PAS fige a une valeur
+    en dur : `html_liste()` inclut CSS_FLUX, dont le selecteur
+    `.liste-dense .neuf` fait deja lire "neuf" au moins une fois avant
+    qu'aucune cellule ne soit marquee -- et la garde
+    `prefers-reduced-motion` (fix voisin de ce meme correctif) le nomme une
+    seconde fois pour couper son animation. Coder ce nombre en dur romprait
+    le test au premier ajustement de la feuille sans rapport avec ce
+    qu'il verifie : c'est le DELTA entre deux cycles qui prouve l'ordre, pas
+    le bruit de depart (voir la mise en garde sur `html_liste`).
+    """
+    maintenant = time.time()
+    ligne = dict(LIGNE_REELLE_INPLAY)
+    ligne["event_id"] = "verrou"
+    ligne["updated_ts"] = maintenant
+    ligne["points"] = "30-15"
+    df = pd.DataFrame([ligne])
+
+    at = _lancer(monkeypatch, df)
+    assert not at.exception
+    base = html_liste(at).count("neuf")
+    assert base >= 1, \
+        f"la feuille CSS_FLUX doit au moins nommer .liste-dense .neuf, vu {base}"
+
+    # Un seul changement -- le point du premier joueur -- doit allumer UNE
+    # seule cellule au-dessus de ce bruit.
+    df_change = pd.DataFrame([{**ligne, "points": "40-15"}])
+    _mock_lecteur(monkeypatch, df_change)
+    at.run()
+    assert not at.exception
+    apres_changement = html_liste(at).count("neuf")
+    assert apres_changement == base + 1, \
+        ("une seule cellule doit s'allumer au-dessus du bruit de la "
+         f"feuille, vu {apres_changement - base}")
+
+    # Rien ne bouge plus entre ce cycle et le suivant : rien de nouveau ne
+    # doit s'allumer.
+    _mock_lecteur(monkeypatch, df_change)
+    at.run()
+    assert not at.exception
+    apres_stable = html_liste(at).count("neuf")
+    assert apres_stable == base, \
+        ("aucune valeur n'a change depuis le cycle precedent, mais "
+         f"{apres_stable - base} cellule(s) restent allumees")

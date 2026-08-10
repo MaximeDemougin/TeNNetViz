@@ -131,6 +131,19 @@ def test_le_surlignage_joue_une_SEULE_fois():
     assert ".neuf" in CSS_FLUX
 
 
+def test_prefers_reduced_motion_ETEINT_les_DEUX_animations():
+    """Ce module ajoute deux animations (le battement, le surlignage) a une
+    page qui existe pour retirer le mouvement involontaire. `liste_dense.py`
+    honore deja `prefers-reduced-motion` pour sa transition de survol : ne
+    pas le faire ici serait reintroduire, par une autre porte, ce que ce
+    chantier a supprime."""
+    assert "@media (prefers-reduced-motion: reduce)" in CSS_FLUX
+    bloc = CSS_FLUX[CSS_FLUX.index("prefers-reduced-motion"):]
+    assert ".battement u" in bloc, "le battement n'est pas coupe"
+    assert ".liste-dense .neuf" in bloc, "le surlignage n'est pas coupe"
+    assert "animation: none" in bloc
+
+
 def test_le_rendu_pose_la_classe_sur_la_seule_cellule_neuve():
     """La preuve doit porter sur le HTML POUSSE, pas sur le drapeau : c'est
     le HTML qu'on regarde a l'ecran."""

@@ -524,14 +524,20 @@ def detail_archive(event_id, maintenant: float) -> None:
 
 event_id = st.query_params.get("event_id")
 
-# Le detail se rafraichit tout seul lui aussi : meme grisement, meme remede.
-st.markdown(CSS_FLUX, unsafe_allow_html=True)
-
 niveau_1()
 
 if event_id:
     st.divider()
     st.subheader("Le match choisi")
+    # CSS_FLUX seulement ICI, autour du detail auto-rafraichi -- jamais sur
+    # `niveau_1()`. Ce niveau-la interroge des tables lentes
+    # (`charger_matchs_passes`, `charger_points`, `charger_bilan_qa`) sans
+    # fragment ni cadence : eteindre le grisement dessus ferait passer une
+    # requete lente pour une page figee, et la feuille masque aussi l'homme
+    # qui court, qui EST le bouton Stop -- le seul moyen d'interrompre un
+    # cycle bloque. Ce n'est que le rafraichissement AUTOMATIQUE du fragment
+    # ci-dessous qui devait se faire discret, pas le clic dans l'archive.
+    st.markdown(CSS_FLUX, unsafe_allow_html=True)
     if st.button("Fermer le détail", key="fermer_detail"):
         del st.query_params["event_id"]
         st.rerun()

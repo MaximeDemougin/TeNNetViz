@@ -388,7 +388,8 @@ def test_le_badge_de_BREAK_ne_decale_pas_les_chiffres(rendu_reel):
 
 #: Un banc qui GRISE : un fragment dont le cycle depasse deliberement les
 #: 500 ms du seuil. Sans ce depassement, Streamlit ne grise pas et le test
-#: serait vert sans rien prouver. `{feuille}` recoit CSS_FLUX ou rien.
+#: serait vert sans rien prouver. `{avec_feuille}` recoit le litteral "True"
+#: ou "False" ; CSS_FLUX est importe DANS le banc lui-meme, juste au-dessus.
 BANC_FLUX = '''
 import sys, time
 sys.path.insert(0, {racine!r})

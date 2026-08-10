@@ -69,7 +69,16 @@ CSS_FLUX = """
     to   { background-image: linear-gradient(rgba(50,178,150,0),   rgba(50,178,150,0)); }
   }
   .liste-dense .neuf {
-    animation: surlignage .6s ease-out; border-radius: .2rem;
+    animation: surlignage .6s ease-out;
+  }
+
+  /* Cette page existe pour RETIRER le mouvement involontaire (le grisement
+     du haut de ce fichier) : lui en rendre un par une autre porte serait
+     defaire ce que le chantier a fait. `prefers-reduced-motion` est deja la
+     regle du depot pour la transition de survol (liste_dense.py) -- les deux
+     animations que CE module ajoute suivent la meme regle. */
+  @media (prefers-reduced-motion: reduce) {
+    .battement u, .liste-dense .neuf { animation: none; }
   }
 </style>
 """

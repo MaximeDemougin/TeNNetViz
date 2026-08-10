@@ -745,11 +745,13 @@ def _identifiants_surs(event_id) -> list:
     injoignable", un message qui pointerait vers la mauvaise cause. Retirer
     aussi les antislashs le rend impossible.
 
-    UNE SEULE implementation, partagee par ``charger_serie`` et
-    ``charger_points`` : ce depot tient deja qu'ecrire deux fois la meme
-    regle garantit qu'une correction n'atterrisse que d'un cote (voir
-    ``detail_match``, partage entre les deux pages). Pour une regle de
-    SECURITE, le cote oublie serait celui qu'on ne verrait jamais.
+    UNE SEULE implementation, partagee par ``charger_serie``,
+    ``charger_points`` et ``charger_mouvements`` : ce depot tient deja
+    qu'ecrire deux fois la meme regle garantit qu'une correction n'atterrisse
+    que d'un cote (voir ``detail_match``, partage entre les deux pages). Pour
+    une regle de SECURITE, le cote oublie serait celui qu'on ne verrait
+    jamais -- et donc celui qu'il faut nommer ici a chaque nouveau client,
+    sous peine de mentir sur ce que "une seule implementation" protege.
 
     Accepte plusieurs identifiants -- separes par des virgules ou donnes en
     liste -- parce que la source attribue parfois deux ou trois ``event_id``

@@ -621,8 +621,12 @@ def _prix(valeur, classe: str, mouvement=None, neuf: bool = False) -> str:
     if valeur is None or pd.isna(valeur):
         return '<i class="vide">—</i>'
     bouge = f" {mouvement}" if mouvement in ("hausse", "baisse") else ""
-    frais = " neuf" if neuf else ""
-    return f'<i class="{classe}{bouge}{frais}">{float(valeur):.2f}</i>'
+    # `frais`/`perime`/`inconnu` est le vocabulaire de la FRAICHEUR des flux
+    # (`etat_fraicheur`, les pastilles) ; ce drapeau-ci est un autre concept,
+    # le SURLIGNAGE local de `flux_continu`. Les nommer pareil ferait lire ce
+    # `_prix` comme s'il parlait de fraicheur des capteurs.
+    marque = " neuf" if neuf else ""
+    return f'<i class="{classe}{bouge}{marque}">{float(valeur):.2f}</i>'
 
 
 def _heure(ts) -> str:

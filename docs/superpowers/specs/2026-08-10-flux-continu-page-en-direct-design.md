@@ -236,6 +236,31 @@ La cadence par défaut reste **15 s**. À ~40 ms le cycle, 5 s devient
 défendable, mais c'est un choix d'usage à faire en regardant la page, pas dans
 une spec.
 
+**Note ajoutée à la revue finale (2026-08-10).** Deux précisions que ce
+paragraphe ne pouvait pas encore porter en le rédigeant :
+
+1. Le §6 dit que la feuille est **une constante partagée** ; ce paragraphe dit
+   que `pages/match.py` reçoit le §6 **mais pas** le §7. Les deux ne peuvent
+   plus être vrais en même temps une fois que le CSS du §7 (le battement, le
+   surlignage `.neuf`) vit **dans cette même constante** `CSS_FLUX` — ce
+   qu'il fait, pour ne pas écrire deux feuilles. `pages/match.py` charge donc
+   forcément des règles `.battement` et `.liste-dense .neuf` qu'il n'exploite
+   jamais : sa page ne dessine ni bandeau de battement ni liste surlignée.
+   C'est une contradiction du présent document, pas du code. Le CSS mort est
+   accepté tel quel plutôt que de scinder `CSS_FLUX` en deux constantes : la
+   duplication qu'une scission éviterait (quelques règles jamais
+   appliquées) coûte moins qu'une deuxième feuille à tenir synchrone — exactement
+   le risque que le §6 invoque pour justifier la constante unique.
+2. **`pages/match.py` a deux moitiés**, et la revue finale a tranché que
+   `CSS_FLUX` ne s'injecte que sur l'une : le fragment auto-rafraîchi du
+   §8 (`if event_id:`), pas `niveau_1()` (l'archive — filtres, requêtes
+   lentes, aucun fragment). Éteindre le grisement sur `niveau_1()` aurait fait
+   passer une requête lente pour une page figée, et la même règle masque le
+   widget qui porte aussi le bouton Stop — le seul moyen d'interrompre un
+   cycle bloqué sur cette moitié-là de la page. Seul le rafraîchissement
+   **automatique** devait se faire discret ; le clic dans l'archive garde son
+   grisement et son Stop.
+
 ## 9. Vérification
 
 Le défaut du §3 a survécu à 169 tests verts parce qu'aucun ne regardait un
