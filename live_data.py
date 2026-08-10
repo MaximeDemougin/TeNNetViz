@@ -825,6 +825,46 @@ def charger_serie(event_id, lecteur=None) -> pd.DataFrame:
     return fusionner_series(df, famille=surs)
 
 
+#: Les seules colonnes dont le SENS d'un prix a besoin. `SELECT *` en lisait
+#: quatorze pour en utiliser six.
+COLONNES_MOUVEMENT = ("event_id", "ts", "back_odds_a", "lay_odds_a",
+                      "back_odds_b", "lay_odds_b")
+
+
+def charger_mouvements(event_id, lecteur=None) -> pd.DataFrame:
+    """Ce qu'il faut, et rien de plus, pour dire quels prix remuent.
+
+    La liste appelait ``charger_serie`` pour toute la liste des matchs en
+    cours, uniquement pour nourrir ``mouvements_de_prix``. Mesure du
+    2026-08-10 : 341 ms, dont 48 de SQL et **289 de fusion** -- 85 % du cycle
+    dans une boucle pandas ligne a ligne. Or la liste n'a jamais eu besoin de
+    la fusion : ``mouvements_de_prix`` regroupe par ``event_id``, et
+    ``lignes()`` refusionne ensuite les identifiants d'un meme match. Et la
+    fusion, appliquee a plusieurs matchs, DETRUISAIT l'information (cf.
+    ``fusionner_series``). Ce lecteur-ci : 16 ms.
+
+    La fenetre temporelle n'est volontairement PAS reduite. ``live_series``
+    ecrit au CHANGEMENT et non a cadence fixe -- ecarts medians de 8 a 101 s
+    selon le match, trous mesures jusqu'a 1354 s. Une fenetre de dix minutes
+    perdrait le releve de reference d'avant la fenetre de mouvement, donc des
+    fleches. La lenteur n'etait pas dans le volume lu.
+
+    ``lecteur`` est injectable pour les tests ; en service il vaut
+    ``read_sql_query``. Import differe, meme motif que ``charger_serie``.
+    """
+    lire = lecteur if lecteur is not None else _lecteur_par_defaut()
+    surs = _identifiants_surs(event_id)
+    if not surs:
+        return pd.DataFrame()
+    liste = _litteral_liste(surs)
+    df = lire(
+        SCHEMA,
+        f"SELECT {', '.join(COLONNES_MOUVEMENT)} FROM live_series "
+        f"WHERE event_id IN ({liste}) ORDER BY ts",
+    )
+    return df if df is not None else pd.DataFrame()
+
+
 # ── Les tables du PASSE ───────────────────────────────────────────────
 #
 # `live_now` et `live_series` portent le direct ; `live_qa_daily`,

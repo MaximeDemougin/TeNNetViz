@@ -8,6 +8,7 @@ import pandas as pd
 from live_data import (
     CHEMIN_BATTEMENT_PUBLIEUR,
     CHEMIN_BATTEMENT_SCORE,
+    COLONNES_MOUVEMENT,
     SCHEMA,
     SEUIL_BATTEMENT_ARRETE_S,
     SEUIL_FRAICHEUR_BOOKS_FLUX_S,
@@ -22,6 +23,7 @@ from live_data import (
     battement_absent,
     capteur_score_mort,
     a_joue,
+    charger_mouvements,
     competition,
     chronologie,
     ecart_en_ticks,
@@ -1739,3 +1741,56 @@ def test_charger_points_rend_les_lignes_reelles_dans_lordre_recu():
 def test_charger_points_sur_un_match_sans_point_rend_un_tableau_vide():
     assert charger_points("3807291", lecteur=lambda s, q: pd.DataFrame()).empty
     assert charger_points("3807291", lecteur=lambda s, q: None).empty
+
+
+def test_charger_mouvements_ne_lit_que_les_colonnes_du_MOUVEMENT():
+    """341 ms mesurees pour la liste, dont 289 en fusion et 48 en SQL. La
+    liste n'a besoin que du sens des prix : six colonnes, aucune fusion.
+    Mesure du 2026-08-10 : 16 ms au lieu de 341."""
+    vues = {}
+    def lecteur(schema, query):
+        vues["query"] = query
+        return pd.DataFrame()
+    charger_mouvements("1,2", lecteur=lecteur)
+    q = vues["query"]
+    assert "SELECT *" not in q, "la liste ne lit pas quatorze colonnes pour six"
+    for colonne in ("event_id", "ts", "back_odds_a", "lay_odds_a",
+                    "back_odds_b", "lay_odds_b"):
+        assert colonne in q, colonne
+    assert "'1', '2'" in q, q
+    assert q.rstrip().endswith("ORDER BY ts"), q
+
+
+def test_charger_mouvements_ne_replie_RIEN():
+    """C'est tout l'objet de ce lecteur : `mouvements_de_prix` regroupe par
+    `event_id`, et `lignes()` refusionne ensuite les identifiants d'un match.
+    Replier ici couterait 289 ms pour detruire l'information."""
+    brut = pd.DataFrame([
+        {"event_id": "A", "ts": 100.0, "back_odds_a": 3.10, "lay_odds_a": 3.2,
+         "back_odds_b": 1.46, "lay_odds_b": 1.5},
+        {"event_id": "B", "ts": 100.0, "back_odds_a": 10.0, "lay_odds_a": 11.0,
+         "back_odds_b": 1.07, "lay_odds_b": 1.1},
+    ])
+    out = charger_mouvements("A,B", lecteur=lambda schema, query: brut)
+    assert len(out) == 2, "deux matchs au meme instant restent deux lignes"
+
+
+def test_charger_mouvements_n_interroge_pas_la_base_pour_rien():
+    """`IN ()` est une erreur de syntaxe MySQL : sans identifiant
+    exploitable, on ne pose pas la question. Meme regle que `charger_serie`."""
+    appels = []
+    charger_mouvements("", lecteur=lambda s, q: appels.append(q))
+    charger_mouvements(None, lecteur=lambda s, q: appels.append(q))
+    assert appels == [], appels
+
+
+def test_charger_mouvements_partage_la_regle_de_surete_SQL():
+    """La regle qui rend la ligne SQL sure est ecrite UNE fois
+    (`_identifiants_surs`). Pour une regle de SECURITE, le cote oublie serait
+    celui qu'on ne verrait jamais."""
+    vues = {}
+    charger_mouvements("1' OR '1'='1", lecteur=lambda s, q: vues.setdefault("q", q))
+    entre_parentheses = vues["q"].split("IN (")[1].split(")")[0]
+    # Une seule valeur, entre deux quotes, et pas une quote de plus : le
+    # litteral ne peut pas se refermer.
+    assert entre_parentheses.count("'") == 2, entre_parentheses
