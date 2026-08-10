@@ -380,3 +380,134 @@ def test_le_badge_de_BREAK_ne_decale_pas_les_chiffres(rendu_reel):
         "aucune balle de break dans le banc : le test ne prouve rien"
     x = {b["x"] for b in bords}
     assert len(x) == 1, f"les chiffres ne tombent pas au meme endroit : {sorted(x)}"
+
+
+#: Un banc qui GRISE : un fragment dont le cycle depasse deliberement les
+#: 500 ms du seuil. Sans ce depassement, Streamlit ne grise pas et le test
+#: serait vert sans rien prouver. `{feuille}` recoit CSS_FLUX ou rien.
+BANC_FLUX = '''
+import sys, time
+sys.path.insert(0, {racine!r})
+import streamlit as st
+from flux_continu import CSS_FLUX
+
+st.set_page_config(layout="wide")
+if {avec_feuille}:
+    st.markdown(CSS_FLUX, unsafe_allow_html=True)
+
+@st.fragment(run_every=2)
+def zone():
+    # 1,2 s : bien au-dela des 500 ms apres lesquelles STALE_STYLES tombe.
+    time.sleep(1.2)
+    st.markdown("<div class='temoin'>" + str(time.time()) + "</div>",
+                unsafe_allow_html=True)
+
+zone()
+st.write("banc de grisement")
+'''
+
+#: L'opacite REELLEMENT calculee sur les conteneurs que Streamlit a marques
+#: perimes, et la VISIBILITE de l'homme qui court.
+#:
+#: `court` doit lire une visibilite, pas une presence dans le DOM : la regle
+#: `.stStatusWidget:has(...) { display: none }` s'applique a l'ANCETRE du
+#: widget, pas a l'icone elle-meme -- React continue de monter l'icone, un
+#: `querySelector` brut la trouverait donc toujours, feuille ou pas. Mesure :
+#: avec CSS_FLUX, `offsetParent` de l'icone vaut `null` et `checkVisibility()`
+#: rend `false` sur 23/23 echantillons ou l'icone existe -- la regle joue
+#: bien, seule une lecture par presence ne pouvait pas le voir.
+OPACITE = """
+(() => {
+  const p = [...document.querySelectorAll(
+      '[data-testid="stElementContainer"][data-stale="true"]')];
+  const icone = document.querySelector('[data-testid="stStatusWidgetRunningIcon"]');
+  return {
+    perimes: p.length,
+    mini: p.length ? Math.min(...p.map(e => +getComputedStyle(e).opacity)) : null,
+    court: !!icone && icone.checkVisibility(),
+  };
+})()
+"""
+
+
+def _banc_flux(tmp_path_factory, avec_feuille):
+    """Sert le banc, echantillonne l'opacite pendant plusieurs cycles.
+
+    On ECHANTILLONNE plutot qu'on ne mesure une fois : le grisement n'existe
+    qu'entre la 500e milliseconde d'un cycle et sa fin. Une mesure unique
+    tomberait presque toujours a cote.
+    """
+    dossier = tmp_path_factory.mktemp("banc-flux")
+    app = dossier / "banc.py"
+    app.write_text(BANC_FLUX.format(racine=str(RACINE),
+                                    avec_feuille="True" if avec_feuille else "False"))
+    port = _port_libre()
+    serveur = subprocess.Popen(
+        [str(Path(sys.executable).parent / "streamlit"), "run", str(app),
+         "--server.port", str(port), "--server.headless", "true",
+         "--browser.gatherUsageStats", "false"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    nav = None
+    try:
+        for _ in range(60):
+            try:
+                urllib.request.urlopen(f"http://localhost:{port}/", timeout=1)
+                break
+            except Exception:
+                time.sleep(0.5)
+        else:
+            pytest.skip("le serveur Streamlit n'a pas demarre")
+        nav = _Navigateur(_port_libre())
+        nav.cdp("Page.navigate", url=f"http://localhost:{port}")
+        for _ in range(40):
+            time.sleep(0.5)
+            if nav.js("document.querySelectorAll('.temoin').length"):
+                break
+        else:
+            pytest.skip("le banc n'a jamais rendu")
+        vus, mini, court = 0, 1.0, False
+        for _ in range(90):          # ~9 s, soit quatre cycles de 2 s
+            m = nav.js(OPACITE)
+            if m["perimes"]:
+                vus += 1
+                if m["mini"] is not None:
+                    mini = min(mini, m["mini"])
+            court = court or m["court"]
+            time.sleep(0.1)
+        return {"echantillons_perimes": vus, "opacite_mini": mini, "court": court}
+    finally:
+        if nav is not None:
+            nav.fermer()
+        serveur.terminate()
+        serveur.wait(timeout=15)
+
+
+def test_le_banc_VOIT_le_grisement_sans_la_feuille(tmp_path_factory):
+    """Le temoin. Sans lui, le test suivant serait vert meme si le banc etait
+    incapable d'observer quoi que ce soit -- et « un test qui n'a jamais ete
+    rouge ne prouve rien ».
+
+    Mesure du frontal 1.52.2 : STALE_STYLES = {opacity: .33} apres 500 ms.
+    """
+    m = _banc_flux(tmp_path_factory, avec_feuille=False)
+    assert m["echantillons_perimes"] > 0, \
+        "le banc n'a jamais vu un conteneur perime : il ne prouve rien"
+    assert m["opacite_mini"] < 0.9, \
+        f"le grisement ne se produit pas (opacite mini {m['opacite_mini']})"
+
+
+def test_la_feuille_ETEINT_le_grisement(tmp_path_factory):
+    """Le defaut signale : la page se grisait entierement toutes les quinze
+    secondes, ce qui lui donnait un air de F5 sans qu'aucun rechargement
+    n'ait lieu."""
+    m = _banc_flux(tmp_path_factory, avec_feuille=True)
+    assert m["echantillons_perimes"] > 0, \
+        "aucun conteneur perime : la feuille n'a rien eu a eteindre"
+    assert m["opacite_mini"] >= 1.0, \
+        f"un conteneur est descendu a {m['opacite_mini']} d'opacite"
+
+
+def test_l_homme_qui_court_ne_se_montre_plus(tmp_path_factory):
+    """Et l'avis de deconnexion, porte par le MEME widget, reste possible :
+    la regle est conditionnee a l'icone par `:has()`."""
+    assert not _banc_flux(tmp_path_factory, avec_feuille=True)["court"]
