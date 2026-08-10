@@ -149,6 +149,13 @@ def zone_donnees():
     # ignore l'heure occuperait la première ligne sur la foi d'une absence.
     en_cours = ordonner_par_tournoi(en_cours)
 
+    if en_cours.empty:
+        # Snapshot perime si la liste se vide puis se repeuple : sans ce
+        # reset, un event_ids qui revient plus tard se compare a un
+        # instantane arbitrairement vieux et allume tout ce qui a derive
+        # pendant que ce match etait absent de la liste.
+        st.session_state["vu_en_cours"] = {}
+
     # Le signal de vie AVANT tout retour anticipé, y compris quand la table est
     # vide : une table vide ne prouve RIEN sur la santé du publieur, et ce
     # retour prématuré a déjà rendu le signal inatteignable une fois.

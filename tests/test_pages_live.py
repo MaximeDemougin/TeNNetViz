@@ -1657,3 +1657,30 @@ def test_les_six_matchs_gardent_leur_FLECHE(monkeypatch):
         f"les six matchs doivent porter une hausse (back/lay A montent), vu {hausse}"
     assert baisse >= 6, \
         f"les six matchs doivent porter une baisse (back/lay B descendent), vu {baisse}"
+
+
+# --- Le surlignage local (task 6) : la memoire de session ne doit pas
+# survivre a un passage a vide -------------------------------------------
+
+
+def test_vu_en_cours_est_REINITIALISE_quand_la_liste_se_vide(monkeypatch):
+    """Sans ce reset, un match qui disparait de la liste des « en cours »
+    (termine, ou simplement absent d'un cycle) puis y revient plus tard sous
+    le meme `event_ids` se compare a un instantane arbitrairement vieux --
+    et tout ce qui a derive pendant son absence s'allumerait a tort."""
+    maintenant = time.time()
+    ligne = dict(LIGNE_REELLE_INPLAY)
+    ligne["updated_ts"] = maintenant
+    at = _lancer(monkeypatch, pd.DataFrame([ligne]))
+    assert not at.exception
+    assert at.session_state["vu_en_cours"], \
+        "l'instantane du premier cycle doit exister avant le test du reset"
+
+    # Meme session (memes mocks de battement), mais la liste se vide : plus
+    # aucun match « en cours » au cycle suivant.
+    _mock_lecteur(monkeypatch, pd.DataFrame())
+    at.run()
+
+    assert not at.exception
+    assert at.session_state["vu_en_cours"] == {}, \
+        "le snapshot perime doit etre efface, pas laisse tel quel"

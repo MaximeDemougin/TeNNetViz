@@ -106,6 +106,26 @@ def test_un_match_NOUVEAU_n_est_pas_un_changement():
     assert not structure[0]["joueurs"][0].get("neuf_point")
 
 
+def test_instantane_IGNORE_les_lignes_SANS_identifiant():
+    """`event_ids` vide -- le repli de `lignes()` sur une ligne sans
+    identifiant connu -- collisionnerait entre plusieurs matchs dans le
+    dictionnaire : le survivant se ferait comparer aux valeurs d'un
+    etranger au cycle suivant."""
+    vu = instantane([_ligne(event_ids="", point="30"), _ligne(event_ids="", point="99")])
+    assert vu == {}
+
+
+def test_marquer_changements_IGNORE_une_ligne_SANS_identifiant_meme_si_vu_en_a_une():
+    """Meme si l'appelant fournit malgre tout un `vu` portant une cle vide
+    (construit a la main, hors `instantane`), une ligne sans identifiant ne
+    doit jamais s'y comparer : elle n'a aucune facon fiable de savoir a
+    quel match cette cle appartenait."""
+    vu = {"": [{"jeux": ("6", "4"), "point": "30", "back": 2.0, "lay": 2.1}]}
+    structure = [_ligne(event_ids="", point="40")]
+    marquer_changements(structure, vu)
+    assert not structure[0]["joueurs"][0].get("neuf_point")
+
+
 def test_le_surlignage_joue_une_SEULE_fois():
     assert "@keyframes surlignage" in CSS_FLUX
     assert ".neuf" in CSS_FLUX
@@ -149,4 +169,11 @@ def test_une_structure_jamais_marquee_est_rendue_a_l_identique():
         "league": "Test", "tour_type": "atp", "start_timestamp": time.time(),
         "status": "InPlay", "updated_ts": time.time(),
     }])
-    assert "neuf" not in rendu(lignes(df, time.time()))
+    html = rendu(lignes(df, time.time()))
+    assert "neuf" not in html
+    # L'absence de « neuf » ne suffit pas : la regression exacte etait
+    # `class=""` sur une cellule de points ordinaire (une classe VIDE ne
+    # contient pas la sous-chaine « neuf », donc l'assertion ci-dessus
+    # restait verte). C'est cette ligne, sur le HTML exact, qui l'aurait
+    # attrapee.
+    assert "<span>30</span><span>0</span>" in html, html
