@@ -105,14 +105,27 @@ def pastille(ligne_ou_at, flux):
     return {"frais": "🟢", "perime": "🔴", "inconnu": "⚪"}[etats[flux]]
 
 
-def _mock_lecteur(monkeypatch, df):
+def _mock_lecteur(monkeypatch, df, serie=None):
     """Injecte un faux `db_utils.db_utils.read_sql_query`, meme procede que
     tests/test_live_data.py::test_le_lecteur_par_defaut_ne_deplace_pas_le_repertoire_courant :
     pages/live.py appelle charger_matchs() SANS lecteur, qui passe par
     _lecteur_par_defaut() et importe ce module -- on le remplace avant que
-    l'import n'ait lieu, sans toucher a un vrai credentials.yml."""
+    l'import n'ait lieu, sans toucher a un vrai credentials.yml.
+
+    ``serie`` : reponse SEPAREE pour les requetes visant `live_series`
+    (charger_serie/charger_mouvements). Sans elle, le meme mock repond aux
+    deux tables -- suffisant tant qu'aucun test ne regarde le mouvement des
+    prix. Le test de la fleche (task 3) a besoin des deux formes a la fois :
+    `df` est une ligne PAR MATCH (`live_now`), `serie` plusieurs RELEVES par
+    match (`live_series`, colonne `ts`) -- un seul mock aurait servi la
+    premiere la ou le calcul du mouvement attend la seconde, et
+    mouvements_de_prix() se serait tu sans jamais toucher au vrai defaut."""
     faux = types.ModuleType("db_utils.db_utils")
-    faux.read_sql_query = lambda schema, query: df
+    if serie is None:
+        faux.read_sql_query = lambda schema, query: df
+    else:
+        faux.read_sql_query = lambda schema, query: (
+            serie if "live_series" in query else df)
     monkeypatch.setitem(sys.modules, "db_utils", types.ModuleType("db_utils"))
     monkeypatch.setitem(sys.modules, "db_utils.db_utils", faux)
 
@@ -144,7 +157,7 @@ def _lignes_deux_matchs(maintenant):
 
 
 def _lancer(monkeypatch, df, battement_publieur=None, battement_score=None,
-            battement_score_absent=None):
+            battement_score_absent=None, serie=None):
     """``battement_publieur``/``battement_score`` : callables injectes pour
     ``live_data.lire_battement_publieur``/``lire_battement_score``. Par
     defaut (non fournis), les DEUX sont mockes a ``lambda: None``
@@ -165,10 +178,14 @@ def _lancer(monkeypatch, df, battement_publieur=None, battement_score=None,
     vrai systeme de fichiers (le fichier existe reellement sur cette
     machine aujourd'hui, mais rien ne le garantit pour toujours -- exactement
     le defaut de determinisme que ce fichier de test s'interdit partout
-    ailleurs)."""
+    ailleurs).
+
+    ``serie`` : transmis a ``_mock_lecteur`` -- reponse a part pour
+    ``live_series``, quand un test a besoin que ``charger_serie``/
+    ``charger_mouvements`` lisent autre chose que ``df`` (task 3)."""
     _DERNIER["df"] = df
     _DERNIER["maintenant"] = time.time()
-    _mock_lecteur(monkeypatch, df)
+    _mock_lecteur(monkeypatch, df, serie=serie)
     monkeypatch.setattr(
         live_data, "lire_battement_publieur",
         battement_publieur if battement_publieur is not None else (lambda: None),
@@ -1577,3 +1594,66 @@ def test_la_COMPETITION_coiffe_les_tournois_et_ne_se_dit_qu_une_fois(monkeypatch
     # Et l'entete de tournoi ne le repete plus.
     assert 'class="circuit' not in h, \
         "le badge de circuit subsiste dans l'entete de tournoi : il fait doublon"
+
+
+# --- Task 3 (2026-08-10) : la liste cesse d'appeler `charger_serie` --------
+#
+# `charger_serie(",".join(event_ids))` joint les identifiants de TOUS les
+# matchs en cours en une seule requete -- ils se retrouvent donc tous
+# DECLARES comme une seule famille aux yeux de `fusionner_series` (tour 1).
+# Le publieur ecrit les six matchs dans le meme cycle, donc au meme `ts` :
+# la fusion les repliait en une poignee de lignes, et la plupart perdaient
+# leur identite -- donc leur fleche de mouvement. `charger_mouvements`
+# (tour 2) ne fusionne jamais : c'est lui que la page doit appeler.
+
+
+def test_les_six_matchs_gardent_leur_FLECHE(monkeypatch):
+    """Reproduction directe du defaut, au niveau de la PAGE -- pas juste de
+    `fusionner_series` en isolation (deja couvert par test_live_data.py) :
+    ce test protege le SITE D'APPEL dans pages/live.py, celui qui joint six
+    matchs dans un seul `charger_serie(...)`.
+
+    On regarde le HTML REELLEMENT pousse, pas un calcul rejoue : rejouer
+    mouvements_de_prix() dans le test verifierait que la page fait ce que le
+    test refait, pas ce qu'elle montre.
+    """
+    maintenant = time.time()
+    matchs = pd.DataFrame([
+        {**LIGNE_REELLE_INPLAY, "event_id": str(i),
+         "participant1": f"J{i}a", "participant2": f"J{i}b",
+         "updated_ts": maintenant}
+        for i in range(6)
+    ])
+    # Deux releves par match, mais au MEME horodatage d'un match a l'autre --
+    # c'est exactement la collision que le publieur produit en service : un
+    # releve avant la fenetre de deux minutes (SEUIL_MOUVEMENT_S), un dedans,
+    # pour que chaque match ait un mouvement A MONTRER si son identite
+    # survit.
+    releves = []
+    for i in range(6):
+        releves.append({"event_id": str(i), "ts": maintenant - 300,
+                        "back_odds_a": 2.0, "lay_odds_a": 2.1,
+                        "back_odds_b": 2.0, "lay_odds_b": 2.1})
+        releves.append({"event_id": str(i), "ts": maintenant - 10,
+                        "back_odds_a": 3.0, "lay_odds_a": 3.1,
+                        "back_odds_b": 1.5, "lay_odds_b": 1.6})
+    serie = pd.DataFrame(releves)
+
+    at = _lancer(monkeypatch, matchs, serie=serie)
+
+    assert not at.exception
+    html = html_liste(at)
+    # Compter la sous-chaine "hausse" brute se laisse tromper : la feuille de
+    # style CSS (injectee dans la MEME balise markdown que la liste, cf.
+    # liste_dense.CSS) nomme "hausse"/"baisse" quatre fois chacune comme
+    # selecteurs, un bruit constant qui suffisait a lui seul a satisfaire
+    # `>= 6` -- constate en ecrivant ce test AVANT le correctif : il passait
+    # a tort avec un seul match sur six montrant une vraie fleche. On compte
+    # donc la BALISE rendue, `<i class="b hausse">`/`<i class="l hausse">`,
+    # qui ne peut venir que d'un prix reellement marque.
+    hausse = html.count('<i class="b hausse">') + html.count('<i class="l hausse">')
+    baisse = html.count('<i class="b baisse">') + html.count('<i class="l baisse">')
+    assert hausse >= 6, \
+        f"les six matchs doivent porter une hausse (back/lay A montent), vu {hausse}"
+    assert baisse >= 6, \
+        f"les six matchs doivent porter une baisse (back/lay B descendent), vu {baisse}"

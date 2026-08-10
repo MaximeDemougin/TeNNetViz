@@ -27,6 +27,7 @@ from live_data import (
     a_joue,
     capteur_score_mort,
     charger_matchs,
+    charger_mouvements,
     charger_serie,
     ordonner_par_tournoi,
     publieur_arrete,
@@ -201,11 +202,12 @@ def zone_donnees():
             "son detail."
         )
         # Le SENS du dernier mouvement de chaque prix. Une seule requete pour
-        # toute la liste (426 ms mesurees pour six matchs, a peine plus que
-        # pour un seul) : c'est ce qui distingue les lignes qui remuent de
-        # celles qui dorment, et rien d'autre dans la page ne le dit.
+        # toute la liste, SANS repli : `charger_serie` fusionnait, ce qui
+        # coutait 289 ms des 341 du cycle -- et surtout ecrasait 62 % des
+        # lignes en prenant un horodatage commun pour un match commun. Six
+        # colonnes, aucune fusion : 16 ms mesurees le 2026-08-10.
         try:
-            serie = charger_serie(",".join(en_cours["event_ids"].astype(str)))
+            serie = charger_mouvements(",".join(en_cours["event_ids"].astype(str)))
             bouge = mouvements_de_prix(serie, maintenant)
         except Exception:
             # Le mouvement est un CONFORT : son absence ne doit pas emporter
