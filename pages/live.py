@@ -14,6 +14,7 @@ position dans la page.
 
 import time
 
+import pandas as pd
 import streamlit as st
 
 from detail_match import afficher
@@ -141,9 +142,18 @@ def zone_donnees():
     en_cours = matchs[matchs["en_cours"]] if "en_cours" in matchs.columns else matchs
     # Seuls les matchs COMMENCÉS : un match annoncé mais pas débuté encombre
     # la liste sans rien apprendre -- ni score, ni points, ni cotes qui bougent.
+    #
+    # La troisième condition est devenue décisive le 2026-08-10 : certains
+    # matchs n'ont de score chez AUCUNE source, et leur ligne ne porte QUE des
+    # cotes. Un marché rattaché veut dire que l'exchange le déclare en jeu et
+    # que le carnet arrive ; c'est ce qui distingue ces lignes d'un match
+    # simplement annoncé.
     if {"score", "points"} <= set(en_cours.columns):
+        marches = (en_cours["id_market"] if "id_market" in en_cours.columns
+                   else [None] * len(en_cours))
         en_cours = en_cours[[
-            a_joue(sc, pt) for sc, pt in zip(en_cours["score"], en_cours["points"])
+            a_joue(sc, pt, cotes_bougent=not pd.isna(mk) and str(mk or "") != "")
+            for sc, pt, mk in zip(en_cours["score"], en_cours["points"], marches)
         ]]
     # Une heure INCONNUE va en fin de liste : sans cela, un match dont on
     # ignore l'heure occuperait la première ligne sur la foi d'une absence.

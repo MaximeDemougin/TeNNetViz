@@ -738,14 +738,20 @@ def rendu(structure: list, ouvert: str = "", entetes: bool = True,
             f'<span>{e(j["nom"])}</span></div>'
             for j in ligne["joueurs"]
         )
+        # Un score ABSENT rend le meme tiret qu'une cote absente (`_prix`).
+        # Certains matchs n'ont de score chez AUCUNE source -- l'API ne les
+        # annonce pas, le canal `general` d'OrbitX ne les pousse pas -- et leur
+        # ligne ne porte QUE des cotes. Laisser la colonne vide se lirait comme
+        # un defaut d'affichage ; le tiret dit qu'on ne sait pas, et c'est le
+        # vocabulaire deja employe ailleurs dans cette liste.
         jeux = "".join(
             f'<span><em>{"🎾" if j["sert"] else ""}</em>'
-            + '<span class="cases">' + "".join(
+            + '<span class="cases">' + ("".join(
                 f'<b class="{"encours" if i == n_sets - 1 else ""}'
                 f'{" neuf" if j.get("neuf_jeux") and i == n_sets - 1 else ""}">'
                 f'{e(v)}</b>'
                 for i, v in enumerate(j["jeux"])
-            ) + "</span></span>"
+            ) or '<i class="vide">—</i>') + "</span></span>"
             for j in ligne["joueurs"]
         )
         # La balle de break ne vient d'aucune colonne : elle se deduit du

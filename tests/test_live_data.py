@@ -1794,3 +1794,25 @@ def test_charger_mouvements_partage_la_regle_de_surete_SQL():
     # Une seule valeur, entre deux quotes, et pas une quote de plus : le
     # litteral ne peut pas se refermer.
     assert entre_parentheses.count("'") == 2, entre_parentheses
+
+
+# ── Une ligne sans SCORE mais avec des COTES ─────────────────────────────
+#
+# Signale le 2026-08-10 : les matchs du Challenger de Hambourg n'apparaissent
+# pas. Aucune source ne donne leur score -- ni l'API, ni le canal `general`
+# d'OrbitX -- alors que leur carnet arrive a quatre secondes. Le PoC les publie
+# desormais avec `source_score = "exchange_seul"` ; encore faut-il que la page
+# ne les jette pas.
+
+
+def test_a_joue_laisse_passer_une_ligne_dont_les_COTES_bougent():
+    """Le filtre vise le match « annonce mais pas commence » -- celui qui n'a
+    « ni score, ni points, ET dont les cotes ne bougent pas ». Une ligne sans
+    score mais dont le marche est EN JEU apprend quelque chose : elle reste."""
+    from live_data import a_joue
+
+    assert a_joue(None, None) is False
+    assert a_joue(None, None, cotes_bougent=True) is True
+    # Un vrai score reste suffisant, cotes ou pas.
+    assert a_joue("1-0", "15-0") is True
+    assert a_joue("1-0", "15-0", cotes_bougent=False) is True

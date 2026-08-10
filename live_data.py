@@ -1434,18 +1434,27 @@ def competition(tour_type, league) -> str:
     return circuit
 
 
-def a_joue(score, points) -> bool:
-    """Vrai des qu'au moins un point a ete joue.
+def a_joue(score, points, cotes_bougent: bool = False) -> bool:
+    """Vrai des qu'au moins un point a ete joue, OU que le marche est suivi.
 
     Un match annonce mais pas commence encombre la liste sans rien apprendre :
-    il n'a ni score, ni points, et ses cotes ne bougent pas. On s'appuie sur
-    ``avancement``, la meme mesure qui sert a departager deux vues d'un meme
-    instant -- une seule definition de « ou en est le match » dans tout le
-    module.
+    il n'a ni score, ni points, ET SES COTES NE BOUGENT PAS. C'est cette
+    derniere condition qui compte depuis le 2026-08-10, et elle etait deja
+    dans l'intention d'origine : certains matchs n'ont de score chez AUCUNE
+    source -- l'API ne les annonce pas, le canal `general` d'OrbitX ne les
+    pousse pas -- alors que leur carnet arrive a quatre secondes. Le PoC les
+    publie desormais sous `source_score = "exchange_seul"`, et les ecarter ici
+    reviendrait a cacher la SEULE donnee qu'on ait sur eux.
+
+    On s'appuie sur ``avancement``, la meme mesure qui sert a departager deux
+    vues d'un meme instant -- une seule definition de « ou en est le match »
+    dans tout le module.
 
     Un score illisible rend FAUX : sans savoir lire, on ne peut pas affirmer
     qu'un point a ete joue.
     """
+    if cotes_bougent:
+        return True
     jeux, pts = avancement(score, points)
     return jeux > 0 or pts > 0
 

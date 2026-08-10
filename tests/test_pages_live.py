@@ -1770,3 +1770,46 @@ def test_l_ORDRE_marquer_puis_stocker_est_VERROUILLE(monkeypatch):
     assert apres_stable == base, \
         ("aucune valeur n'a change depuis le cycle precedent, mais "
          f"{apres_stable - base} cellule(s) restent allumees")
+
+
+def test_une_ligne_SANS_score_mais_avec_un_MARCHE_reste_affichee(monkeypatch):
+    """Signale le 2026-08-10 : les matchs du Challenger de Hambourg
+    n'apparaissent pas. Aucune source ne donne leur score -- ni l'API, ni le
+    canal `general` d'OrbitX -- alors que leur carnet arrive a quatre
+    secondes. Le PoC les publie sous `source_score = "exchange_seul"`, score
+    et points a NULL.
+
+    Le filtre `a_joue` les jetait. C'est le CABLAGE de sa correction : sans
+    l'argument `cotes_bougent` passe ici, le predicat serait juste et inerte.
+
+    Fixture DISCRIMINANTE : deux lignes sans score, l'une AVEC marche et
+    l'autre SANS. Une seule doit rester -- si les deux restaient, le filtre
+    ne filtrerait plus rien.
+    """
+    maintenant = time.time()
+    commun = {
+        "status": "InPlay", "league": "Hamburg Challenger", "tour_type": "atp",
+        "score": None, "points": None,
+        "age_score_s": None, "age_exchange_s": 2.0,
+        "age_books_s": None, "age_stats_s": None,
+        "updated_ts": maintenant,
+    }
+    df = pd.DataFrame([
+        {**commun, "event_id": "prod:AVEC", "id_market": "1.260938249",
+         "participant1": "Jan Opitz", "participant2": "Ol Krutykh",
+         "back_odds_a": 1.10, "back_odds_b": 8.20,
+         "book_odds_a": None, "book_odds_b": None},
+        {**commun, "event_id": "evt-SANS", "id_market": None,
+         "participant1": "Pas De", "participant2": "Marche Ici",
+         "back_odds_a": None, "back_odds_b": None,
+         "book_odds_a": None, "book_odds_b": None},
+    ])
+    at = _lancer(monkeypatch, df)
+    texte = " ".join(str(el.value) for el in at.markdown)
+    assert "Jan Opitz" in texte, (
+        "la ligne sans score mais AVEC marche a ete filtree : c'est le match "
+        "signale, et il n'existe nulle part ailleurs"
+    )
+    assert "Marche Ici" not in texte, (
+        "la ligne sans score NI marche est restee : le filtre ne filtre plus"
+    )
