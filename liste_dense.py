@@ -607,17 +607,22 @@ def lignes(df, maintenant: float, mouvements=None) -> list:
     return out
 
 
-def _prix(valeur, classe: str, mouvement=None) -> str:
+def _prix(valeur, classe: str, mouvement=None, neuf: bool = False) -> str:
     """Un prix. La lettre « b »/« l » et la fleche viennent de la feuille de
     style : ce sont des redondances visuelles, pas du contenu.
 
     La lettre double la couleur -- back et lay ne doivent pas se distinguer
     par la seule teinte, sinon un daltonien lit le carnet a l'envers.
+
+    `neuf` marque ce qui vient de changer depuis le dernier affichage. La
+    fleche, elle, porte les deux dernieres minutes : deux echelles de temps,
+    deux marques.
     """
     if valeur is None or pd.isna(valeur):
         return '<i class="vide">—</i>'
     bouge = f" {mouvement}" if mouvement in ("hausse", "baisse") else ""
-    return f'<i class="{classe}{bouge}">{float(valeur):.2f}</i>'
+    frais = " neuf" if neuf else ""
+    return f'<i class="{classe}{bouge}{frais}">{float(valeur):.2f}</i>'
 
 
 def _heure(ts) -> str:
@@ -732,7 +737,9 @@ def rendu(structure: list, ouvert: str = "", entetes: bool = True,
         jeux = "".join(
             f'<span><em>{"🎾" if j["sert"] else ""}</em>'
             + '<span class="cases">' + "".join(
-                f'<b class="{"encours" if i == n_sets - 1 else ""}">{e(v)}</b>'
+                f'<b class="{"encours" if i == n_sets - 1 else ""}'
+                f'{" neuf" if j.get("neuf_jeux") and i == n_sets - 1 else ""}">'
+                f'{e(v)}</b>'
                 for i, v in enumerate(j["jeux"])
             ) + "</span></span>"
             for j in ligne["joueurs"]
@@ -741,13 +748,19 @@ def rendu(structure: list, ouvert: str = "", entetes: bool = True,
         # serveur et des points. C'est le moment ou un match bascule, et le
         # seul que cette liste avait sous la main sans jamais le montrer.
         points = "".join(
-            f'<span class="bp">{e(j["point"])}</span>' if j["bp"]
+            f'<span class="bp{" neuf" if j.get("neuf_point") else ""}">'
+            f'{e(j["point"])}</span>' if j["bp"]
+            # `class=""` cassait `_cellules()` (tests/test_pages_live.py),
+            # qui n'attend qu'un `<span>` nu sur un point ordinaire non
+            # marque -- l'attribut ne s'ecrit que s'il y a quelque chose a
+            # marquer.
+            else f'<span class="neuf">{e(j["point"])}</span>' if j.get("neuf_point")
             else f'<span>{e(j["point"])}</span>'
             for j in ligne["joueurs"]
         )
         prix = "".join(
-            "<span>" + _prix(j["back"], "b", j.get("mvt_back"))
-            + _prix(j["lay"], "l", j.get("mvt_lay")) + "</span>"
+            "<span>" + _prix(j["back"], "b", j.get("mvt_back"), j.get("neuf_back"))
+            + _prix(j["lay"], "l", j.get("mvt_lay"), j.get("neuf_lay")) + "</span>"
             for j in ligne["joueurs"]
         )
         ecarts = " / ".join("—" if t is None else str(t) for t in ligne["ecarts"])

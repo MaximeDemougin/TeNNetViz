@@ -9,7 +9,7 @@ qu'on visait et pourquoi.
 
 import pandas as pd
 
-from flux_continu import CSS_FLUX, bandeau_battement
+from flux_continu import CSS_FLUX, bandeau_battement, instantane, marquer_changements
 
 
 def test_la_feuille_neutralise_le_GRISEMENT():
@@ -56,3 +56,97 @@ def test_le_battement_rejoue_a_CHAQUE_cycle():
     morte et ne prouverait rien."""
     assert "@keyframes battement" in CSS_FLUX
     assert "infinite" not in CSS_FLUX
+
+
+def _ligne(event_ids="A", jeux=("6", "4"), point="30", back=2.0, lay=2.1):
+    return {
+        "event_ids": event_ids,
+        "joueurs": [
+            {"jeux": list(jeux), "point": point, "back": back, "lay": lay},
+            {"jeux": list(jeux), "point": "0", "back": 1.8, "lay": 1.9},
+        ],
+    }
+
+
+def test_le_PREMIER_rendu_n_allume_rien():
+    """Sans instantane precedent il n'y a rien a comparer. Marquer tout
+    ferait s'allumer la liste entiere a l'ouverture, et le signal ne voudrait
+    plus rien dire."""
+    structure = [_ligne()]
+    marquer_changements(structure, {})
+    for joueur in structure[0]["joueurs"]:
+        assert not any(joueur.get(c) for c in
+                       ("neuf_jeux", "neuf_point", "neuf_back", "neuf_lay"))
+
+
+def test_seule_la_valeur_qui_a_CHANGE_s_allume():
+    vu = instantane([_ligne(point="30", back=2.0)])
+    structure = [_ligne(point="40", back=2.0)]
+    marquer_changements(structure, vu)
+    j = structure[0]["joueurs"][0]
+    assert j["neuf_point"] is True, "le point a change"
+    assert j["neuf_back"] is False, "la cote back n'a pas bouge"
+    assert j["neuf_jeux"] is False
+
+
+def test_une_cote_ABSENTE_ne_clignote_pas_indefiniment():
+    """NaN != NaN : compare brut, une cote absente paraitrait changer a
+    chaque cycle et la ligne battrait sans fin."""
+    vu = instantane([_ligne(back=float("nan"))])
+    structure = [_ligne(back=float("nan"))]
+    marquer_changements(structure, vu)
+    assert structure[0]["joueurs"][0]["neuf_back"] is False
+
+
+def test_un_match_NOUVEAU_n_est_pas_un_changement():
+    """Un match qui entre dans la liste n'a rien « change » : il arrive."""
+    vu = instantane([_ligne(event_ids="A")])
+    structure = [_ligne(event_ids="B", point="40")]
+    marquer_changements(structure, vu)
+    assert not structure[0]["joueurs"][0].get("neuf_point")
+
+
+def test_le_surlignage_joue_une_SEULE_fois():
+    assert "@keyframes surlignage" in CSS_FLUX
+    assert ".neuf" in CSS_FLUX
+
+
+def test_le_rendu_pose_la_classe_sur_la_seule_cellule_neuve():
+    """La preuve doit porter sur le HTML POUSSE, pas sur le drapeau : c'est
+    le HTML qu'on regarde a l'ecran."""
+    from liste_dense import rendu
+
+    structure = [{
+        "event_id": "A", "event_ids": "A", "debut": 1786352606.0,
+        "competition": "ATP", "tournoi": "Test",
+        "joueurs": [
+            {"nom": "A", "sert": True, "jeux": ["6"], "point": "40",
+             "back": 2.0, "lay": 2.1, "bp": False,
+             "mvt_back": None, "mvt_lay": None, "neuf_back": True},
+            {"nom": "B", "sert": False, "jeux": ["4"], "point": "0",
+             "back": 1.8, "lay": 1.9, "bp": False,
+             "mvt_back": None, "mvt_lay": None},
+        ],
+        "ecarts": [1, 1], "fraicheur": [], "morts": [],
+    }]
+    html = rendu(structure)
+    assert html.count("neuf") == 1, "une seule cellule doit s'allumer"
+    # Aucune fleche sur ce prix : la classe est donc exactement « b neuf ».
+    assert 'class="b neuf"' in html, html
+
+
+def test_une_structure_jamais_marquee_est_rendue_a_l_identique():
+    """`rendu` sert aussi `pages/match.py` et deux bancs de test qui
+    n'appellent jamais `marquer_changements`."""
+    from liste_dense import lignes, rendu
+    import pandas as pd, time
+
+    df = pd.DataFrame([{
+        "event_id": "A", "participant1": "A", "participant2": "B",
+        "score": "6-4", "points": "30-0", "server": "0",
+        "back_odds_a": 2.0, "lay_odds_a": 2.1,
+        "back_odds_b": 1.8, "lay_odds_b": 1.9,
+        "league": "Test", "tour_type": "atp", "start_timestamp": time.time(),
+        "status": "InPlay", "updated_ts": time.time(),
+    }])
+    assert "neuf" not in rendu(lignes(df, time.time()))

@@ -17,7 +17,7 @@ import time
 import streamlit as st
 
 from detail_match import afficher
-from flux_continu import CSS_FLUX, bandeau_battement
+from flux_continu import CSS_FLUX, bandeau_battement, instantane, marquer_changements
 from liste_dense import (
     CSS, cle_bouton, cle_carte, cle_ligne, entete_competition,
     entete_tournoi, lignes,
@@ -219,7 +219,12 @@ def zone_donnees():
             # Le mouvement est un CONFORT : son absence ne doit pas emporter
             # la liste, qui elle porte le score et les prix.
             bouge = {}
-        _dessiner(lignes(en_cours, maintenant, bouge), ouvert, "en-cours")
+        structure = lignes(en_cours, maintenant, bouge)
+        # La memoire vit dans la SESSION, une entree par section : les deux
+        # listes de la page se marcheraient dessus en partageant la meme.
+        marquer_changements(structure, st.session_state.get("vu_en_cours") or {})
+        st.session_state["vu_en_cours"] = instantane(structure)
+        _dessiner(structure, ouvert, "en-cours")
 
     termines = matchs[~matchs["en_cours"]] if "en_cours" in matchs.columns else matchs.iloc[0:0]
     if not termines.empty:
