@@ -18,6 +18,10 @@ CSS. Il faut un moteur de rendu, une geometrie, et la question que pose
 
 Le test se saute proprement si `google-chrome` n'est pas installe -- il ne
 doit jamais rendre la suite dependante d'un navigateur.
+
+Les bancs de flux (fin de fichier) mesurent en outre la visibilite avec
+`Element.checkVisibility()`, disponible depuis Chrome 105 ; ce depot en
+installe une version bien plus recente (146 au moment ou ceci est ecrit).
 """
 
 import json
@@ -482,32 +486,67 @@ def _banc_flux(tmp_path_factory, avec_feuille):
         serveur.wait(timeout=15)
 
 
-def test_le_banc_VOIT_le_grisement_sans_la_feuille(tmp_path_factory):
+@pytest.fixture(scope="module")
+def banc_sans_feuille(tmp_path_factory):
+    """Le banc SANS `CSS_FLUX`, partage par les deux temoins qui en ont
+    besoin (grisement, icone) : un seul demarrage de serveur et de
+    navigateur pour les deux, puisque les deux lisent le MEME
+    echantillonnage sous deux angles differents."""
+    return _banc_flux(tmp_path_factory, avec_feuille=False)
+
+
+@pytest.fixture(scope="module")
+def banc_avec_feuille(tmp_path_factory):
+    """Le banc AVEC `CSS_FLUX`, partage par les deux tests qui verifient ce
+    qu'elle eteint (grisement, icone) -- meme raison que ci-dessus."""
+    return _banc_flux(tmp_path_factory, avec_feuille=True)
+
+
+def test_le_banc_VOIT_le_grisement_sans_la_feuille(banc_sans_feuille):
     """Le temoin. Sans lui, le test suivant serait vert meme si le banc etait
     incapable d'observer quoi que ce soit -- et « un test qui n'a jamais ete
     rouge ne prouve rien ».
 
     Mesure du frontal 1.52.2 : STALE_STYLES = {opacity: .33} apres 500 ms.
     """
-    m = _banc_flux(tmp_path_factory, avec_feuille=False)
+    m = banc_sans_feuille
     assert m["echantillons_perimes"] > 0, \
         "le banc n'a jamais vu un conteneur perime : il ne prouve rien"
     assert m["opacite_mini"] < 0.9, \
         f"le grisement ne se produit pas (opacite mini {m['opacite_mini']})"
 
 
-def test_la_feuille_ETEINT_le_grisement(tmp_path_factory):
+def test_le_banc_VOIT_l_homme_qui_court_sans_la_feuille(banc_sans_feuille):
+    """Le temoin de l'icone -- meme principe que ci-dessus, applique a une
+    PROPRIETE DIFFERENTE du meme banc.
+
+    Sans lui, un `court: False` mesure avec la feuille ne distinguerait pas
+    deux histoires opposees : la regle `:has()` a bien masque l'icone, OU
+    l'icone n'a tout simplement jamais rendu dans la fenetre echantillonnee
+    (nom de testid change, montage differe...). Les deux donnent le meme
+    booleen ; seul ce temoin, mesure SANS la feuille ou rien ne peut la
+    cacher, prouve que le banc est capable de la voir.
+    """
+    assert banc_sans_feuille["court"], \
+        "le banc n'a jamais vu l'icone en cours : il ne prouve rien"
+
+
+def test_la_feuille_ETEINT_le_grisement(banc_avec_feuille):
     """Le defaut signale : la page se grisait entierement toutes les quinze
     secondes, ce qui lui donnait un air de F5 sans qu'aucun rechargement
     n'ait lieu."""
-    m = _banc_flux(tmp_path_factory, avec_feuille=True)
+    m = banc_avec_feuille
     assert m["echantillons_perimes"] > 0, \
         "aucun conteneur perime : la feuille n'a rien eu a eteindre"
     assert m["opacite_mini"] >= 1.0, \
         f"un conteneur est descendu a {m['opacite_mini']} d'opacite"
 
 
-def test_l_homme_qui_court_ne_se_montre_plus(tmp_path_factory):
+def test_l_homme_qui_court_ne_se_montre_plus(banc_avec_feuille):
     """Et l'avis de deconnexion, porte par le MEME widget, reste possible :
-    la regle est conditionnee a l'icone par `:has()`."""
-    assert not _banc_flux(tmp_path_factory, avec_feuille=True)["court"]
+    la regle est conditionnee a l'icone par `:has()`.
+
+    N'a de sens qu'accompagne de `test_le_banc_VOIT_l_homme_qui_court_...` :
+    seul, un `court` toujours faux pourrait venir d'une icone qui ne rend
+    jamais, pas d'une regle qui la masque."""
+    assert not banc_avec_feuille["court"]
