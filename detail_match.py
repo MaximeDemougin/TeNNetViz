@@ -10,6 +10,8 @@ C'est ce qui permet a l'appelant de decider quand et comment lire, et de
 proteger cette lecture lui-meme.
 """
 
+import datetime
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -334,6 +336,38 @@ def point_par_point(serie, m) -> None:
     )
 
 
+def _heure_du_pari(instant) -> str:
+    """L'heure d'un pari, telle que la PRODUCTION l'ecrit.
+
+    DEUX FAITS MESURES LE 2026-08-11, et chacun a coute une panne ou l'aurait
+    coutee :
+
+    1. `Bet.created_at` est un DATETIME, pas un epoch. Il remonte en
+       `datetime64[ns]`, donc en `pd.Timestamp`, et `float(Timestamp)` leve un
+       `TypeError`. La fenetre de detail tombait des qu'on ouvrait un match
+       parie -- constate EN PRODUCTION.
+    2. Le serveur de base tourne a l'heure de PARIS : son `NOW()` rend
+       15:49:36 quand son `UTC_TIMESTAMP()` rend 13:49:36, et son dernier pari
+       date de 15:33, seize minutes plus tot. En UTC, ce pari serait dans deux
+       heures.
+
+    L'instant est donc DEJA local, et le passer par ``to_paris`` -- qui suppose
+    l'UTC pour un instant naif -- le decalerait de deux heures. C'est l'erreur
+    SYMETRIQUE de celle qui a fait afficher de l'UTC partout ailleurs le meme
+    jour : convertir ce qui l'est deja est aussi faux que ne pas convertir ce
+    qui ne l'est pas.
+
+    Tout ce qui n'est pas une date rend un tiret. On ne devine pas une heure a
+    partir d'un nombre : le prendre pour un epoch afficherait un instant
+    plausible et faux.
+    """
+    if not isinstance(instant, datetime.datetime):
+        return "—"
+    if pd.isna(instant):
+        return "—"
+    return pd.Timestamp(instant).strftime("%H:%M")
+
+
 def tableau_paris(position) -> list[dict]:
     """Les paris du compte sur ce match, un par ligne, prets a afficher.
 
@@ -347,9 +381,7 @@ def tableau_paris(position) -> list[dict]:
     cacherait qu'on a demande davantage ; n'afficher que le demande gonflerait
     la position, jusqu'a mille fois (`ID_BET 31421` : 200,00 pour 0,18).
 
-    L'heure passe par ``to_paris`` : c'est un epoch, et
-    ``pd.to_datetime(..., unit="s")`` rend un instant NAIF en UTC -- le defaut
-    du 2026-08-11, que le garde structurel des heures interdit desormais.
+    L'heure ne passe PAS par ``to_paris`` -- voir ``_heure_du_pari``.
     """
     if not position:
         return []
@@ -358,10 +390,8 @@ def tableau_paris(position) -> list[dict]:
     lots += list(position.get("non_rattaches") or [])
     out = []
     for pari in lots:
-        instant = pari.get("created_at")
         ligne = {
-            "Heure": (to_paris(pd.to_datetime(float(instant), unit="s"))
-                      .strftime("%H:%M") if instant is not None else "—"),
+            "Heure": _heure_du_pari(pari.get("created_at")),
             "Sélection": str(pari.get("bet_libelle") or "?"),
             "Sens": str(pari.get("side_back_lay") or "?"),
             "Cote": pari.get("odds"),

@@ -957,11 +957,11 @@ def _position_reelle():
                   {"ID_BET": 31402, "bet_libelle": "Denis Yevseyev",
                    "side_back_lay": "lay", "odds": 1.72, "stake": 62.58,
                    "potential_profit": 62.58, "liability": 45.06,
-                   "created_at": 1786449600.0},
+                   "created_at": pd.Timestamp("2026-08-10 14:00:00")},
                   {"ID_BET": 31396, "bet_libelle": "Denis Yevseyev",
                    "side_back_lay": "lay", "odds": 1.67, "stake": 13.81,
                    "potential_profit": 13.81, "liability": 9.25,
-                   "created_at": 1786449000.0},
+                   "created_at": pd.Timestamp("2026-08-10 13:50:00")},
               ]},
         "b": None, "non_rattaches": [],
     }
@@ -1015,22 +1015,89 @@ def test_un_pari_NON_RATTACHE_apparait_quand_meme_dans_la_fenetre():
     position = {"a": None, "b": None, "non_rattaches": [
         {"ID_BET": 1, "bet_libelle": "Joueur Inconnu", "side_back_lay": "lay",
          "odds": 2.0, "stake": 10.0, "potential_profit": 10.0,
-         "liability": 10.0, "created_at": 1786449600.0}]}
+         "liability": 10.0,
+         "created_at": pd.Timestamp("2026-08-10 14:00:00")}]}
     lignes = tableau_paris(position)
     assert len(lignes) == 1
     assert lignes[0]["Sélection"] == "Joueur Inconnu"
 
 
-def test_l_heure_d_un_pari_est_celle_de_PARIS():
-    """`created_at` est un epoch ; `pd.to_datetime(..., unit="s")` rend un
-    instant NAIF en UTC. C'est le defaut du 2026-08-11, et le garde structurel
-    des heures couvre ce module."""
+def test_l_heure_d_un_pari_est_DEJA_locale_et_ne_se_reconvertit_PAS():
+    """`Bet.created_at` est un DATETIME, pas un epoch, et le serveur de base
+    tourne a l'heure de PARIS.
+
+    Mesure du 2026-08-11 : son `NOW()` rend 15:49:36 quand son
+    `UTC_TIMESTAMP()` rend 13:49:36, et son dernier pari date de 15:33 -- seize
+    minutes plus tot. En UTC, ce pari serait dans deux heures.
+
+    Le passer par `to_paris`, qui suppose l'UTC pour un instant NAIF, le
+    decalerait donc de deux heures : un pari de 14:00 s'afficherait a 16:00.
+    C'est l'erreur SYMETRIQUE de celle du 2026-08-11 -- convertir ce qui l'est
+    deja -- et elle est aussi fausse.
+    """
     from detail_match import tableau_paris
 
-    # 1786449600 = 2026-08-11 12:00:00 UTC, soit 14:00 a Paris (CEST).
     position = _position_reelle()
     position["a"]["paris"] = [position["a"]["paris"][0]]
-    assert tableau_paris(position)[0]["Heure"] == "14:00"
+    heure = tableau_paris(position)[0]["Heure"]
+    assert heure == "14:00", (
+        f"heure affichee : {heure}. « 16:00 » signifie qu'on reconvertit un "
+        "instant deja local ; « 12:00 » qu'on le reconvertit a l'envers"
+    )
+
+
+def test_un_NOMBRE_ne_devient_PAS_une_heure():
+    """On ne devine pas une heure a partir d'un nombre.
+
+    `pd.Timestamp(1786449600.0)` lit le flottant comme des NANOSECONDES depuis
+    1970 et rend « 00:00 » -- une heure parfaitement plausible, et fausse de
+    cinquante-six ans. Le tiret dit qu'on ne sait pas, et c'est le vocabulaire
+    deja employe partout ailleurs dans cette application pour une donnee
+    absente.
+    """
+    from detail_match import tableau_paris
+
+    position = _position_reelle()
+    position["a"]["paris"] = [
+        {**position["a"]["paris"][0], "created_at": 1786449600.0}]
+    assert tableau_paris(position)[0]["Heure"] == "—"
+
+
+def test_le_tableau_des_paris_TIENT_sur_la_forme_REELLE_de_la_base():
+    """LE TEST QUI MANQUAIT, et son absence a casse la production.
+
+    `Bet.created_at` remonte en `datetime64[ns]`, donc en `pd.Timestamp` une
+    fois passe par `to_dict("records")`. La fixture d'origine portait un
+    EPOCH -- inventee, pas prelevee -- et `float(Timestamp)` leve un
+    `TypeError`. La fenetre de detail tombait des qu'on ouvrait un match
+    parie ; rien ne l'a vu, parce qu'aucun test ne faisait passer des paris
+    par la CHAINE ENTIERE.
+
+    Celui-ci part d'un `DataFrame` aux dtypes de la base et traverse
+    `positions` puis `tableau_paris`, exactement comme la page.
+    """
+    import pandas as pd
+
+    from detail_match import tableau_paris
+    from paris_live import positions
+
+    paris = pd.DataFrame([{
+        "ID_BET": 31402, "ID_MARKET": "1.260944641", "side_back_lay": "lay",
+        "bet_libelle": "Denis Yevseyev", "odds": 1.72, "stake": 62.58,
+        "potential_profit": 62.58, "liability": 45.06,
+        "created_at": "2026-08-10 14:00:00",
+    }])
+    paris["created_at"] = pd.to_datetime(paris["created_at"])
+    assert str(paris["created_at"].dtype) == "datetime64[ns]", (
+        "la fixture n'a pas le type de la base : elle ne prouve rien"
+    )
+    match = {"event_id": "3818322", "id_market": "1.260944641",
+             "participant1": "Yevseyev", "participant2": "Purtseladze",
+             "back_odds_a": 1.30, "lay_odds_a": 1.32,
+             "back_odds_b": 4.20, "lay_odds_b": 4.40, "status": "InPlay"}
+    lignes = tableau_paris(positions(paris, [match])["3818322"])
+    assert lignes[0]["Heure"] == "14:00"
+    assert lignes[0]["Risque"] == 45.06
 
 
 def test_SANS_pari_la_fenetre_ne_rend_aucune_ligne():
