@@ -426,8 +426,12 @@ def test_deux_SENS_sur_le_meme_cote_se_couvrent_chacun_sur_SA_colonne():
               potential_profit=36.0, liability=50.0),
     ])
     pos = positions(paris, [_match()])["3818322"]["a"]
-    assert pos["cash_out"] == pytest.approx(
-        cash_out("lay", 62.58, 1.72, 1.30) + cash_out("back", 50.0, 1.72, 1.32))
+    # Les jambes s'additionnent BRUTES, la commission vient sur le net -- et
+    # ce net-la est negatif, donc elle ne mord pas.
+    brut = (cash_out("lay", 62.58, 1.72, 1.30, avec_commission=False)
+            + cash_out("back", 50.0, 1.72, 1.32, avec_commission=False))
+    assert brut < 0, "la fixture ne discrimine plus le prelevement"
+    assert pos["cash_out"] == pytest.approx(brut)
     assert pos["cote_courante"] is None      # deux prix, aucun a afficher
 
 
@@ -494,3 +498,62 @@ def test_un_match_SANS_pari_n_apparait_pas():
     from paris_live import positions
 
     assert positions(pd.DataFrame(columns=["ID_MARKET"]), [_match()]) == {}
+
+
+# ---------------------------------------------------------------------------
+# La commission se preleve sur le NET, pas pari par pari
+# ---------------------------------------------------------------------------
+
+#: Les cinq lay reels du compte 1 sur Facundo Mena (marche 1.260938249,
+#: 2026-08-11), releves tels quels. Ils ENCADRENT le prix de 2,68 : deux
+#: jambes gagnantes, deux perdantes, une nulle. C'est ce qui les rend
+#: discriminants -- une position dont toutes les jambes vont dans le meme sens
+#: ne distinguerait pas les deux facons de prelever.
+PARIS_MENA = [
+    {"ID_BET": 31355, "odds": 2.60, "potential_profit": 47.31},
+    {"ID_BET": 31357, "odds": 2.62, "potential_profit": 29.10},
+    {"ID_BET": 31364, "odds": 2.70, "potential_profit": 11.22},
+    {"ID_BET": 31449, "odds": 2.68, "potential_profit": 77.73},
+    {"ID_BET": 31457, "odds": 2.94, "potential_profit": 13.58},
+]
+
+
+def test_la_commission_se_preleve_sur_le_NET_de_la_position():
+    """L'exchange ne prend pas 3 % de chaque jambe gagnante : il prend 3 % du
+    NET du marche. Sa propre trame porte `"commission": 3.00` UNE fois par
+    marche, pas une fois par pari.
+
+    Sur ces cinq paris reels au prix de 2,68, la difference vaut 0,042 sur
+    0,66 -- SIX POUR CENT du montant affiche. Elle n'apparait que sur une
+    position dont les jambes vont dans les deux sens, ce qui est exactement le
+    cas d'une position construite en plusieurs fois pendant que le prix bouge.
+    """
+    import pandas as pd
+
+    from paris_live import COMMISSION_ORBITX, positions
+
+    paris = pd.DataFrame([
+        {"ID_MARKET": "1.260944641", "side_back_lay": "lay",
+         "bet_libelle": "Denis Yevseyev", "stake": p["potential_profit"],
+         "liability": p["potential_profit"] * (p["odds"] - 1), **p}
+        for p in PARIS_MENA
+    ])
+    brut = sum(p["potential_profit"] * (1 - p["odds"] / 2.68) for p in PARIS_MENA)
+    assert brut == pytest.approx(0.6625, abs=0.001), "la fixture ne discrimine pas"
+
+    pos = positions(paris, [_match(back_odds_a=2.68)])["3818322"]["a"]
+    assert pos["cash_out"] == pytest.approx(brut * (1 - COMMISSION_ORBITX))
+    # Preleve jambe par jambe, on obtiendrait 0,6007 : la commission mordrait
+    # sur les jambes gagnantes SANS que les perdantes la reduisent.
+    assert pos["cash_out"] != pytest.approx(0.6007, abs=0.002)
+
+
+def test_le_cash_out_BRUT_est_disponible_sans_commission():
+    """Les jambes doivent pouvoir s'additionner AVANT le prelevement, sinon
+    la commission se compte autant de fois qu'il y a de paris."""
+    from paris_live import COMMISSION_ORBITX, cash_out
+
+    brut = cash_out("lay", 100.0, 2.00, 4.00, avec_commission=False)
+    assert brut == pytest.approx(50.0)
+    assert cash_out("lay", 100.0, 2.00, 4.00) == pytest.approx(
+        50.0 * (1 - COMMISSION_ORBITX))

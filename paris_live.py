@@ -29,7 +29,8 @@ COLONNES_PARIS = (
 COMMISSION_ORBITX = 0.03
 
 
-def cash_out(side_back_lay, mise, cote, cote_courante) -> float | None:
+def cash_out(side_back_lay, mise, cote, cote_courante,
+             avec_commission: bool = True) -> float | None:
     """Ce que vaut la position si on la ferme MAINTENANT.
 
     Couvrir un LAY de mise `S` a la cote `O`, c'est backer au prix courant
@@ -43,6 +44,15 @@ def cash_out(side_back_lay, mise, cote, cote_courante) -> float | None:
     La commission porte sur les gains NETS : elle ne mord que sur un montant
     POSITIF. L'appliquer a une perte l'afficherait plus petite qu'elle n'est,
     et l'erreur irait toujours dans le sens qui rassure.
+
+    ELLE SE PRELEVE UNE FOIS PAR MARCHE, ET NON PAR PARI -- la trame de
+    l'exchange porte `"commission": 3.00` une seule fois, au niveau du marche.
+    Une position batie en plusieurs fois pendant que le prix bouge a donc des
+    jambes des DEUX signes, et la prelever jambe par jambe la ferait mordre
+    sur les gagnantes sans que les perdantes la reduisent. Mesure du
+    2026-08-11 sur les cinq lay reels de Facundo Mena a 2,68 : 0,6007 au lieu
+    de 0,6426, soit six pour cent de trop. `avec_commission=False` rend le
+    montant BRUT, pour que l'appelant somme d'abord et preleve ensuite.
 
     Rend ``None`` -- jamais zero -- quand le prix courant manque : zero serait
     un montant, et faux. Rend ``None`` aussi sur un sens inconnu : on ne devine
@@ -63,6 +73,8 @@ def cash_out(side_back_lay, mise, cote, cote_courante) -> float | None:
         return None
     brut = (mise * (1 - cote / courante) if sens == "lay"
             else mise * (cote / courante - 1))
+    if not avec_commission:
+        return brut
     return brut * (1 - COMMISSION_ORBITX) if brut > 0 else brut
 
 
@@ -307,12 +319,20 @@ def positions(paris, matchs) -> dict:
                     for p in lot_cote]
             if len(colonnes) == 1:
                 resultat[cote]["cote_courante"] = prix[0]
+            # BRUT d'abord, prelevement ENSUITE : la commission se prend une
+            # fois sur le NET du marche, pas sur chaque jambe. Une position
+            # batie en plusieurs fois a des jambes des deux signes, et la
+            # prelever jambe par jambe la ferait mordre sur les gagnantes sans
+            # que les perdantes la reduisent -- six pour cent de trop, mesure.
             montants = [cash_out(p.get("side_back_lay"), montant_apparie(p),
-                                 _nombre(p.get("odds")), courant)
+                                 _nombre(p.get("odds")), courant,
+                                 avec_commission=False)
                         for p, courant in zip(lot_cote, prix)]
             # Un seul prix manquant et la somme serait fausse d'un pari entier :
             # on ne montre alors AUCUN chiffre plutot qu'un chiffre partiel.
             if montants and all(m is not None for m in montants):
-                resultat[cote]["cash_out"] = sum(montants)
+                net = sum(montants)
+                resultat[cote]["cash_out"] = (
+                    net * (1 - COMMISSION_ORBITX) if net > 0 else net)
         out[str(match.get("event_id") or "")] = resultat
     return out
