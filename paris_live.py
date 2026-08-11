@@ -120,14 +120,26 @@ def _designe(selection, participant) -> bool:
     Le prefixe couvre aussi la TRONCATURE de la source (« Mat Pucinelli de
     Almeid », « Joao Victor Couto Loure ») : un nom coupe est un prefixe.
 
+    ET IL JOUE DANS LES DEUX SENS, parce que le PARI aussi est coupe : 1 232
+    libelles sur 30 459 (4 %) font 23 caracteres pile. Le defaut est apparu EN
+    SERVICE le 2026-08-11 -- « Nikolas Sanchez Izquier » contre le participant
+    « Sanchez Izquierdo », que l'exchange publie en entier -- et trois comptes
+    y avaient de l'argent. Il ne se voyait pas dans l'historique, ou
+    `Betfair_links` coupe les DEUX cotes de la meme facon.
+
+    AUCUN SEUIL DE LONGUEUR sur ce sens-la : 14 % des libelles tronques
+    finissent par un jeton de moins de quatre lettres (« Marcelo Tomas Barrios
+    V », « Paulo Andre Saraiva Dos »), et un seuil les refuserait.
+
     Volontairement PAUVRE, et pas par negligence : elle sert a poser un montant
     sur la bonne ligne, jamais a orienter des cotes. Une erreur ici affiche une
     position au mauvais endroit ; le refus, lui, n'affiche rien. Rapprocher les
     noms par ressemblance confondrait « Molleker » et « Moller », qui se sont
     affiches cote a cote le 2026-08-11 et portent chacun leurs paris.
 
-    Mesuree sur 1 830 paires (pari, match) reelles des 45 derniers jours :
-    1 830 resolues, 0 ambigue, 0 muette.
+    Mesuree sur les 8 990 paires (pari, match) reelles de tout l'historique :
+    8 990 resolues, 0 ambigue, 0 muette. Ouvrir le prefixe dans les deux sens
+    n'a change qu'UN SEUL resultat, celui qu'on visait.
 
     L'EGALITE EXACTE N'EST PAS ESSAYEE AVANT LE PREFIXE, parce qu'elle ne sert
     a rien : un jeton egal est un jeton prefixe. Sur 5 042 paires reelles
@@ -140,6 +152,9 @@ def _designe(selection, participant) -> bool:
     restants = list(sel)
     for jeton in part:
         trouve = next((x for x in restants if x.startswith(jeton)), None)
+        if trouve is None:
+            # L'autre sens : c'est la SELECTION qui est coupee.
+            trouve = next((x for x in restants if jeton.startswith(x)), None)
         if trouve is None:
             return False
         restants.remove(trouve)

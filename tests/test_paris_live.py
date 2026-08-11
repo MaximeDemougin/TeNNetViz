@@ -557,3 +557,51 @@ def test_le_cash_out_BRUT_est_disponible_sans_commission():
     assert brut == pytest.approx(50.0)
     assert cash_out("lay", 100.0, 2.00, 4.00) == pytest.approx(
         50.0 * (1 - COMMISSION_ORBITX))
+
+
+def test_une_SELECTION_tronquee_designe_quand_meme_son_joueur():
+    """Le pari aussi peut etre coupe, et c'est le sens INVERSE de la
+    troncature deja couverte.
+
+    Trouve EN SERVICE le 2026-08-11 par la verification sur donnees reelles :
+    « Nikolas Sanchez Izquier » (23 caracteres pile) contre le participant
+    « Sanchez Izquierdo », que `live_now` ecrit en entier. Trois comptes
+    avaient de l'argent sur ce match -- 55,07, 34,34 et 2,52 EUR -- et il
+    tombait en « non rattache ».
+
+    Le defaut ne se voyait PAS dans l'historique : `Betfair_links` coupe les
+    DEUX cotes de la meme facon, donc les deux jetons tronques se
+    correspondaient. Seul le direct, ou l'exchange publie le nom complet,
+    l'expose. C'est exactement ce qu'une verification sur donnees reelles est
+    censee trouver, et qu'aucune fixture inventee n'aurait produit.
+
+    QUATRE POUR CENT DES PARIS sont tronques (1 232 sur 30 459), et 14 % de
+    ceux-la finissent par un jeton de moins de quatre lettres -- « Marcelo
+    Tomas Barrios V », « Paulo Andre Saraiva Dos ». Un seuil de longueur les
+    refuserait ; il n'y en a donc pas.
+    """
+    assert cote_du_pari("Nikolas Sanchez Izquier", "Sanchez Izquierdo",
+                        "Piraino") == "a"
+    # Les deux cotes coupes de la meme facon continuent de se correspondre.
+    assert cote_du_pari("Marcelo Tomas Barrios V", "Marcelo Tomas Barrios V",
+                        "Philip Sekulic") == "a"
+    # UN SEUL CARACTERE RESTANT, et les deux ecritures sont REELLES : le pari
+    # dit « Marcelo Tomas Barrios V », la source dit « Tomas Barrios Vera »
+    # (releve dans `Betfair_links`). C'est ce cas-la qui interdit tout seuil de
+    # longueur sur la troncature inverse.
+    assert cote_du_pari("Marcelo Tomas Barrios V", "Tomas Barrios Vera",
+                        "Philip Sekulic") == "a"
+
+
+def test_la_troncature_INVERSE_ne_rouvre_PAS_les_patronymes_proches():
+    """Accepter le prefixe dans les deux sens elargit la regle, et la seule
+    question qui vaille est : de combien ?
+
+    Mesure sur les 8 990 paires (pari, match) reelles de tout l'historique :
+    8 990 resolues, 0 ambigue, 0 muette, et UN SEUL changement -- celui qu'on
+    voulait. Molleker et Moller ne se rejoignent pas pour autant : ni l'un ni
+    l'autre n'est prefixe de son voisin, dans aucun sens.
+    """
+    assert cote_du_pari("Rudolf Molleker", "Molleker", "Moller") == "a"
+    assert cote_du_pari("Elmer Moller", "Molleker", "Moller") == "b"
+    assert cote_du_pari("Jessica Pieri", "Pieri", "Pieri") is None
