@@ -201,3 +201,44 @@ def test_la_position_vieillit_avec_les_COTES_qui_la_calculent():
         "la pastille d'exchange ne rougit pas : le montant serait affiche "
         "avec une confiance que le prix ne merite pas"
     )
+
+
+def test_un_match_TERMINE_montre_encore_ce_qui_etait_ENGAGE():
+    """Un match fini n'a plus de cash-out -- il n'y a plus rien a couvrir --
+    mais il porte toujours l'argent qu'on y a mis, et il reste affiche six
+    heures. Laisser la colonne vide ferait disparaitre la position a la
+    seconde ou le match se termine, au moment precis ou l'on veut la relire.
+
+    LE MONTANT EST NEUTRE ET SANS SIGNE : c'est un ENGAGEMENT, pas un
+    resultat. Peint en vert ou en rouge, il se lirait comme un gain ou une
+    perte.
+    """
+    import pandas as pd
+
+    from liste_dense import lignes, rendu
+
+    pos = {"3818322": {"a": {"cash_out": None, "mise": 45.06}, "b": None,
+                       "non_rattaches": []}}
+    html = rendu(lignes(pd.DataFrame([_match_parie(status="Finished")]),
+                        maintenant=1786449600.0, positions=pos))
+    cellule = html.split('<span class="position">')[2].split("</span></span>")[0]
+    assert "45" in cellule
+    assert "+" not in cellule and "-" not in cellule
+    assert "gain" not in cellule and "perte" not in cellule
+    assert "engage" in cellule
+
+
+def test_le_cash_out_PRIME_sur_l_engagement_quand_il_existe():
+    """Tant que le match se joue, c'est la valeur de sortie qui compte. Les
+    deux montants dans la meme case se liraient l'un pour l'autre."""
+    import pandas as pd
+
+    from liste_dense import lignes, rendu
+
+    pos = {"3818322": {"a": {"cash_out": -178.6, "mise": 45.06}, "b": None,
+                       "non_rattaches": []}}
+    html = rendu(lignes(pd.DataFrame([_match_parie()]),
+                        maintenant=1786449600.0, positions=pos))
+    cellule = html.split('<span class="position">')[2].split("</span></span>")[0]
+    assert "-179" in cellule
+    assert "45" not in cellule

@@ -256,6 +256,9 @@ CSS = f"""
     font-variant-numeric: tabular-nums; font-size: .72rem; }}
   .liste-dense .position .gain {{ color: #34d399; }}
   .liste-dense .position .perte {{ color: #f87171; }}
+  /* Un ENGAGEMENT n'est pas un resultat : ni vert, ni rouge, ni signe. Il ne
+     dit que « il y a de l'argent la-dessus ». */
+  .liste-dense .position .engage {{ color: rgba(200,200,205,0.55); }}
 
   /* L'entete se cale comme SA colonne de donnees, sinon elle designe le
      vide a cote. */
@@ -612,13 +615,15 @@ def lignes(df, maintenant: float, mouvements=None, positions=None) -> list:
                  "back": m.get("back_odds_a"), "lay": m.get("lay_odds_a"),
                  "bp": bp == 0,
                  "mvt_back": mvt.get("back_odds_a"), "mvt_lay": mvt.get("lay_odds_a"),
-                 "cash_out": (position.get("a") or {}).get("cash_out")},
+                 "cash_out": (position.get("a") or {}).get("cash_out"),
+                 "engage": (position.get("a") or {}).get("mise")},
                 {"nom": str(m.get("participant2") or "?"), "sert": srv == "1",
                  "jeux": jb, "point": pts[1] if len(pts) > 1 else "",
                  "back": m.get("back_odds_b"), "lay": m.get("lay_odds_b"),
                  "bp": bp == 1,
                  "mvt_back": mvt.get("back_odds_b"), "mvt_lay": mvt.get("lay_odds_b"),
-                 "cash_out": (position.get("b") or {}).get("cash_out")},
+                 "cash_out": (position.get("b") or {}).get("cash_out"),
+                 "engage": (position.get("b") or {}).get("mise")},
             ],
             "ecarts": [ecart_en_ticks(m.get("back_odds_a"), m.get("lay_odds_a")),
                        ecart_en_ticks(m.get("back_odds_b"), m.get("lay_odds_b"))],
@@ -813,12 +818,21 @@ def rendu(structure: list, ouvert: str = "", entetes: bool = True,
         # vides, et le tiret est reserve a une donnee ABSENTE -- une cote qu'on
         # attendait -- pas a une donnee SANS OBJET.
         #
+        # LE CASH-OUT PRIME tant qu'il existe : c'est la valeur de sortie, et
+        # c'est ce qui compte pendant que le match se joue. A defaut -- match
+        # termine, prix manquant -- on montre ce qui est ENGAGE, sans signe et
+        # en neutre : c'est une mise, pas un resultat, et la peindre en vert ou
+        # en rouge la ferait lire comme un gain ou une perte. Laisser la case
+        # vide, elle, ferait disparaitre l'argent a la seconde ou le match se
+        # termine, au moment precis ou l'on veut le relire.
+        #
         # Le montant est ARRONDI A L'EURO : la ligne en porte deja huit, et la
         # decimale d'un cash-out indicatif serait une precision qu'il n'a pas.
         positions_html = "".join(
-            "<span></span>" if j.get("cash_out") is None
-            else f'<span class="{"gain" if j["cash_out"] >= 0 else "perte"}">'
-                 f'{j["cash_out"]:+,.0f} €</span>'
+            f'<span class="{"gain" if j["cash_out"] >= 0 else "perte"}">'
+            f'{j["cash_out"]:+,.0f} €</span>' if j.get("cash_out") is not None
+            else f'<span class="engage">{j["engage"]:,.0f} €</span>'
+            if j.get("engage") else "<span></span>"
             for j in ligne["joueurs"]
         )
         ecarts = " / ".join("—" if t is None else str(t) for t in ligne["ecarts"])

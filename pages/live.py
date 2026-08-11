@@ -17,6 +17,7 @@ import time
 import pandas as pd
 import streamlit as st
 
+import paris_live
 from detail_match import afficher
 from flux_continu import CSS_FLUX, bandeau_battement, instantane, marquer_changements
 from liste_dense import (
@@ -118,14 +119,14 @@ def _refermer() -> None:
 
 
 @st.dialog("Detail du match", width="large", on_dismiss=_refermer)
-def _fenetre(m, serie, maintenant: float) -> None:
+def _fenetre(m, serie, maintenant: float, position=None) -> None:
     """Le detail en fenetre de dialogue.
 
     Il s'affichait sous la liste, ce qui obligeait a derouler toute la page
     pour le lire puis a remonter pour changer de match. Une fenetre garde la
     liste en place et se ferme d'un geste.
     """
-    afficher(m, serie, maintenant)
+    afficher(m, serie, maintenant, position=position)
 
 
 @st.fragment(run_every=periode)
@@ -158,6 +159,28 @@ def zone_donnees():
     # Une heure INCONNUE va en fin de liste : sans cela, un match dont on
     # ignore l'heure occuperait la première ligne sur la foi d'une absence.
     en_cours = ordonner_par_tournoi(en_cours)
+
+    # La position du compte sur les matchs AFFICHES, et sur eux seuls.
+    #
+    # Sur TOUS les matchs, pas seulement ceux en cours : les matchs finis
+    # restent consultables six heures et portent leurs paris. N'en cabler que
+    # la premiere liste ferait disparaitre une position a la seconde ou le
+    # match se termine -- au moment precis ou l'on veut la relire.
+    #
+    # Le compte vient de la SESSION : la table porte les paris de trois
+    # comptes, et un pari est prive.
+    #
+    # Un echec ici n'emporte PAS la liste. La production et le PoC ne vivent
+    # pas dans le meme schema : l'une peut etre injoignable pendant que
+    # l'autre publie. Une position absente est une ABSENCE, pas une panne.
+    try:
+        marches = [m for m in matchs.get("id_market", pd.Series(dtype=object))
+                   if m is not None and str(m) not in ("", "nan")]
+        position_par_match = paris_live.positions(
+            paris_live.charger_paris(st.session_state.get("ID_USER"), marches),
+            matchs.to_dict("records"))
+    except Exception:
+        position_par_match = {}
 
     if en_cours.empty:
         # Snapshot perime si la liste se vide puis se repeuple : sans ce
@@ -236,7 +259,8 @@ def zone_donnees():
             # Le mouvement est un CONFORT : son absence ne doit pas emporter
             # la liste, qui elle porte le score et les prix.
             bouge = {}
-        structure = lignes(en_cours, maintenant, bouge)
+        structure = lignes(en_cours, maintenant, bouge,
+                           positions=position_par_match)
         # La memoire vit dans la SESSION, une entree par section : les deux
         # listes de la page se marcheraient dessus en partageant la meme.
         marquer_changements(structure, st.session_state.get("vu_en_cours") or {})
@@ -249,7 +273,9 @@ def zone_donnees():
         # pas retires (six heures) : leur serie vit sept jours, et c'est la
         # qu'on relit un match apres coup.
         st.subheader(f"Matchs termines ({len(termines)})")
-        _dessiner(lignes(termines, maintenant), ouvert, "termines")
+        _dessiner(lignes(termines, maintenant,
+                         positions=position_par_match),
+                  ouvert, "termines")
 
     if not ouvert:
         return
@@ -272,7 +298,8 @@ def zone_donnees():
     except Exception:
         st.error("Base de donnees injoignable. Reessayez plus tard.")
         return
-    _fenetre(m, serie, maintenant)
+    _fenetre(m, serie, maintenant,
+             position_par_match.get(str(m.get("event_id") or "")))
 
 
 zone_donnees()

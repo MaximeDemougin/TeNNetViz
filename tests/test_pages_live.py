@@ -1828,3 +1828,125 @@ def test_une_ligne_SANS_score_mais_avec_un_MARCHE_reste_affichee(monkeypatch):
     assert "Marche Ici" not in texte, (
         "la ligne sans score NI marche est restee : le filtre ne filtre plus"
     )
+
+
+# ── Les paris du compte sur la page en direct ────────────────────────────
+
+
+def _deux_matchs_avec_marche(maintenant):
+    """Un match EN COURS et un match TERMINE, chacun avec son marche.
+
+    Les deux portent un pari : les matchs finis restent consultables six
+    heures, et c'est la qu'on relit une position apres coup.
+    """
+    commun = {
+        "league": "ATP Test", "score": "6-4, 3-2", "points": "30-15",
+        "back_odds_a": 1.30, "lay_odds_a": 1.32,
+        "back_odds_b": 4.20, "lay_odds_b": 4.40,
+        "book_odds_a": 1.35, "book_odds_b": 4.10,
+        "age_score_s": 2.0, "age_exchange_s": 2.0,
+        "age_books_s": 2.0, "age_stats_s": 2.0,
+        "updated_ts": maintenant,
+    }
+    return pd.DataFrame([
+        {**commun, "event_id": "evt-encours", "status": "InPlay",
+         "id_market": "1.260944641",
+         "participant1": "Yevseyev", "participant2": "Purtseladze"},
+        {**commun, "event_id": "evt-fini", "status": "Finished",
+         "id_market": "1.260661227",
+         "participant1": "Dominik Kellovsky",
+         "participant2": "Joao Victor Couto Loure"},
+    ])
+
+
+def _paris_reels():
+    """ID_BET 31402 et 31394, releves tels quels sur les marches ci-dessus."""
+    return pd.DataFrame([
+        {"ID_BET": 31402, "ID_MARKET": "1.260944641", "side_back_lay": "lay",
+         "bet_libelle": "Denis Yevseyev", "odds": 1.72, "stake": 62.58,
+         "potential_profit": 62.58, "liability": 45.06,
+         "created_at": 1786449600.0},
+        {"ID_BET": 31394, "ID_MARKET": "1.260661227", "side_back_lay": "lay",
+         "bet_libelle": "Dominik Kellovský", "odds": 1.66, "stake": 4.63,
+         "potential_profit": 4.63, "liability": 3.06,
+         "created_at": 1786449000.0},
+    ])
+
+
+def test_la_page_charge_la_position_du_compte_CONNECTE(monkeypatch):
+    """Le compte vient de la SESSION. Un identifiant en dur montrerait les
+    paris de quelqu'un d'autre -- la table en porte trois comptes, et un pari
+    est prive.
+
+    Et l'on ne demande QUE les marches a l'ecran : ouvrir l'historique des
+    paris a chaque rafraichissement pour afficher dix matchs serait payer une
+    requete large pour un besoin etroit.
+    """
+    import paris_live
+
+    recus = []
+
+    def espion(id_user, id_markets, lecteur=None):
+        recus.append((id_user, sorted(str(m) for m in id_markets)))
+        return _paris_reels()
+
+    monkeypatch.setattr(paris_live, "charger_paris", espion)
+    at = _lancer(monkeypatch, _deux_matchs_avec_marche(time.time()))
+    assert not at.exception
+    # Un compte DIFFERENT de celui du premier rendu : un « 1 » en dur
+    # passerait le premier tour sans qu'on le voie.
+    at.session_state["ID_USER"] = 8
+    at.run()
+    assert recus, "la page ne charge aucun pari"
+    assert recus[-1][0] == 8, f"compte lu : {recus[-1][0]}"
+    assert recus[-1][1] == ["1.260661227", "1.260944641"]
+
+
+def test_la_position_s_AFFICHE_sur_la_ligne(monkeypatch):
+    """Le montant doit arriver jusqu'au HTML, pas seulement jusqu'au calcul."""
+    import paris_live
+
+    monkeypatch.setattr(paris_live, "charger_paris",
+                        lambda *a, **k: _paris_reels())
+    at = _lancer(monkeypatch, _deux_matchs_avec_marche(time.time()))
+    assert not at.exception
+    texte = " ".join(str(el.value) for el in at.markdown)
+    assert "€" in texte, "aucun montant de position dans la page"
+    assert 'class="perte"' in texte or 'class="gain"' in texte
+
+
+def test_les_matchs_TERMINES_portent_aussi_leur_position(monkeypatch):
+    """Les matchs finis restent affiches six heures et portent leurs paris.
+    Ne cabler que la liste des matchs en cours ferait disparaitre une position
+    a la seconde ou le match se termine -- au moment precis ou l'on veut la
+    relire."""
+    import paris_live
+
+    monkeypatch.setattr(paris_live, "charger_paris",
+                        lambda *a, **k: _paris_reels())
+    at = _lancer(monkeypatch, _deux_matchs_avec_marche(time.time()))
+    assert not at.exception
+    finis = [str(el.value) for el in at.markdown
+             if 'data-section="termines"' in str(el.value)]
+    assert finis, "aucune ligne terminee dans la page"
+    assert "€" in " ".join(finis), (
+        "le match termine perd sa position : seule la liste des matchs en "
+        "cours a ete cablee"
+    )
+
+
+def test_la_liste_TIENT_si_la_lecture_des_paris_ECHOUE(monkeypatch):
+    """La production peut etre injoignable sans que la page en direct soit en
+    panne : elles ne vivent pas dans le meme schema. Une position absente est
+    une ABSENCE, pas une panne -- le reste de la liste ne doit pas tomber avec
+    elle."""
+    import paris_live
+
+    def qui_leve(*a, **k):
+        raise RuntimeError("production injoignable")
+
+    monkeypatch.setattr(paris_live, "charger_paris", qui_leve)
+    at = _lancer(monkeypatch, _deux_matchs_avec_marche(time.time()))
+    assert not at.exception
+    texte = " ".join(str(el.value) for el in at.markdown)
+    assert "Yevseyev" in texte, "la liste est tombee avec les paris"
