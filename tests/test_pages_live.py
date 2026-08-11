@@ -1427,9 +1427,15 @@ def test_l_ENTETE_de_colonnes_partage_la_GRILLE_des_lignes():
     # deux premieres colonnes (heure + noms). Les colonnes ETIQUETEES, elles,
     # sont toutes la -- ce sont les seules qui doivent s'aligner.
     cellules = _re.findall(
-        r'<span class="(heure|noms|jeux|pts|prix|ecart|flux)"', entete)
-    assert cellules == ["noms", "jeux", "pts", "prix", "ecart", "flux"], cellules
-    assert colonnes == 7, f"la grille a {colonnes} colonnes, l'entete en couvre 7"
+        r'<span class="(heure|noms|jeux|pts|prix|position|ecart|flux)"', entete)
+    assert cellules == ["noms", "jeux", "pts", "prix", "position", "ecart",
+                        "flux"], cellules
+    assert colonnes == 8, f"la grille a {colonnes} colonnes, l'entete en couvre 8"
+    # La grille REPLIEE nomme ses zones une par une : une cellule sans zone y
+    # serait placee implicitement et pousserait une ligne de grille sous
+    # CHAQUE match. L'entete, elle, y est masquee -- mais pas les donnees.
+    assert "position" in mobile, \
+        "la colonne des positions n'a pas de zone dans la grille repliee"
 
 
 def test_la_page_DIT_quand_la_source_de_score_est_figee(monkeypatch):

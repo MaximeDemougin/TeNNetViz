@@ -221,8 +221,8 @@ CSS = f"""
        colonne. Figer les largeurs est ce qui fait tenir la promesse d'une
        liste dense : comparer les cotes verticalement d'un match a l'autre. */
     grid-template-columns:
-      3.1rem minmax(0, 1fr) 7.6rem 2.15rem 8.8rem 3.9rem 9rem;
-    grid-template-areas: "heure noms jeux pts prix ecart flux";
+      3.1rem minmax(0, 1fr) 7.6rem 2.15rem 8.8rem 4.6rem 3.9rem 9rem;
+    grid-template-areas: "heure noms jeux pts prix position ecart flux";
     gap: .15rem 1.05rem; align-items: center;
     padding: .3rem .75rem; border-radius: 10px;
     /* RIEN ne doit se peindre hors de cette boite : c'est elle que le bouton
@@ -248,8 +248,18 @@ CSS = f"""
     display: block; font-size: inherit; opacity: 1; white-space: nowrap;
     overflow: hidden;
   }}
+  /* La POSITION du compte. Un joueur par ligne, comme les prix : les deux
+     montants d'un match parie des deux cotes ne doivent pas se lire comme un
+     seul. Le vert et le rouge DOUBLENT le signe deja ecrit (+/-), ils ne le
+     remplacent pas -- un daltonien lirait sinon un gain pour une perte. */
+  .liste-dense .position {{ display: grid; gap: .15rem; text-align: right;
+    font-variant-numeric: tabular-nums; font-size: .72rem; }}
+  .liste-dense .position .gain {{ color: #34d399; }}
+  .liste-dense .position .perte {{ color: #f87171; }}
+
   /* L'entete se cale comme SA colonne de donnees, sinon elle designe le
      vide a cote. */
+  .liste-dense .match.entete .position,
   .liste-dense .match.entete .jeux,
   .liste-dense .match.entete .pts,
   .liste-dense .match.entete .ecart {{ text-align: right; }}
@@ -415,8 +425,8 @@ CSS = f"""
     .liste-dense .match {{
       grid-template-columns: 3rem minmax(0, 1fr) auto 2.2rem;
       grid-template-areas:
-        "heure noms  jeux  pts"
-        "flux  prix  prix  ecart";
+        "heure noms  jeux     pts"
+        "flux  prix  position ecart";
       row-gap: .15rem; padding: .5rem .6rem; gap: .15rem .5rem;
     }}
     /* L'entete nomme les colonnes de la mise en page LARGE : sur deux
@@ -560,12 +570,18 @@ def etat_fraicheur(m, maintenant: float) -> list:
     return out
 
 
-def lignes(df, maintenant: float, mouvements=None) -> list:
+def lignes(df, maintenant: float, mouvements=None, positions=None) -> list:
     """La STRUCTURE de la liste, sans une ligne de HTML.
 
     Tout ce qui peut se tromper est ici : de quel cote est la balle, quel set
     est en cours, quel ecart en ticks, quel etat de fraicheur. ``rendu()``
     n'habille que ca.
+
+    ``positions`` porte les paris de production du compte connecte, indexes
+    par ``event_id`` (voir ``paris_live.positions``). Il vaut ``None`` quand la
+    page ne les charge pas -- personne de connecte, base de production
+    injoignable, tests d'affichage : la colonne disparait alors, elle ne casse
+    rien.
     """
     mouvements = mouvements or {}
     out = []
@@ -580,6 +596,10 @@ def lignes(df, maintenant: float, mouvements=None) -> list:
         for ident in str(m.get("event_ids") or m.get("event_id") or "").split(","):
             mvt.update(mouvements.get(ident.strip(), {}))
         etats = etat_fraicheur(m, maintenant)
+        # La position du compte sur ce match, cote par cote. Elle est indexee
+        # par `event_id` et non par marche : c'est la cle que cette liste
+        # manipule partout ailleurs.
+        position = (positions or {}).get(str(m.get("event_id") or "")) or {}
         out.append({
             "event_id": str(m.get("event_id") or ""),
             "event_ids": str(m.get("event_ids") or m.get("event_id") or ""),
@@ -591,12 +611,14 @@ def lignes(df, maintenant: float, mouvements=None) -> list:
                  "jeux": ja, "point": pts[0] if len(pts) > 0 else "",
                  "back": m.get("back_odds_a"), "lay": m.get("lay_odds_a"),
                  "bp": bp == 0,
-                 "mvt_back": mvt.get("back_odds_a"), "mvt_lay": mvt.get("lay_odds_a")},
+                 "mvt_back": mvt.get("back_odds_a"), "mvt_lay": mvt.get("lay_odds_a"),
+                 "cash_out": (position.get("a") or {}).get("cash_out")},
                 {"nom": str(m.get("participant2") or "?"), "sert": srv == "1",
                  "jeux": jb, "point": pts[1] if len(pts) > 1 else "",
                  "back": m.get("back_odds_b"), "lay": m.get("lay_odds_b"),
                  "bp": bp == 1,
-                 "mvt_back": mvt.get("back_odds_b"), "mvt_lay": mvt.get("lay_odds_b")},
+                 "mvt_back": mvt.get("back_odds_b"), "mvt_lay": mvt.get("lay_odds_b"),
+                 "cash_out": (position.get("b") or {}).get("cash_out")},
             ],
             "ecarts": [ecart_en_ticks(m.get("back_odds_a"), m.get("lay_odds_a")),
                        ecart_en_ticks(m.get("back_odds_b"), m.get("lay_odds_b"))],
@@ -682,6 +704,7 @@ def _entete(noms: str, circuit: str = "", tournoi: bool = False,
         '<span class="jeux">sets</span>'
         '<span class="pts">pt</span>'
         '<span class="prix">back / lay</span>'
+        '<span class="position">position</span>'
         '<span class="ecart">ticks</span>'
         '<span class="flux">flux</span>'
         "</div>"
@@ -785,6 +808,19 @@ def rendu(structure: list, ouvert: str = "", entetes: bool = True,
             + _prix(j["lay"], "l", j.get("mvt_lay"), j.get("neuf_lay")) + "</span>"
             for j in ligne["joueurs"]
         )
+        # La POSITION du compte, sur la ligne du joueur parie. RIEN du tout
+        # quand il n'y en a pas : une liste dense ne se remplit pas de cases
+        # vides, et le tiret est reserve a une donnee ABSENTE -- une cote qu'on
+        # attendait -- pas a une donnee SANS OBJET.
+        #
+        # Le montant est ARRONDI A L'EURO : la ligne en porte deja huit, et la
+        # decimale d'un cash-out indicatif serait une precision qu'il n'a pas.
+        positions_html = "".join(
+            "<span></span>" if j.get("cash_out") is None
+            else f'<span class="{"gain" if j["cash_out"] >= 0 else "perte"}">'
+                 f'{j["cash_out"]:+,.0f} €</span>'
+            for j in ligne["joueurs"]
+        )
         ecarts = " / ".join("—" if t is None else str(t) for t in ligne["ecarts"])
         # Pas de `title` : le bouton invisible qui rend la ligne cliquable
         # recouvre les pastilles, le pointeur ne les atteint jamais. L'age
@@ -810,6 +846,7 @@ def rendu(structure: list, ouvert: str = "", entetes: bool = True,
             f'<span class="jeux">{jeux}</span>'
             f'<span class="pts">{points}</span>'
             f'<span class="prix">{prix}</span>'
+            f'<span class="position">{positions_html}</span>'
             f'<span class="ecart">{ecarts}</span>'
             f'<span class="flux">{pastilles}</span>'
             "</div>"

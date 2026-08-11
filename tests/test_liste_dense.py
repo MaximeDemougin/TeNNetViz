@@ -76,3 +76,128 @@ def test_une_heure_absente_reste_absente():
 
     assert _heure(None) == "--:--"
     assert _heure(pd.NaT) == "--:--"
+
+
+# ── La position du compte sur la ligne ───────────────────────────────────
+#
+# Les paris de production, poses sur la ligne du joueur parie. Fixture
+# PRELEVEE : Yevseyev / Purtseladze, marche 1.260944641, huit lay reels du
+# 2026-08-10.
+
+
+def _match_parie(**surcharges):
+    base = {
+        "event_id": "3818322", "participant1": "Yevseyev",
+        "participant2": "Purtseladze", "score": "1-0", "points": "15-0",
+        "back_odds_a": 1.30, "lay_odds_a": 1.32,
+        "back_odds_b": 4.20, "lay_odds_b": 4.40,
+        "league": "Astana Challenger", "tour_type": "atp",
+        "start_timestamp": 1786449600.0, "updated_ts": 1786449600.0,
+        "age_exchange_s": 2.0,
+    }
+    base.update(surcharges)
+    return base
+
+
+def test_la_position_se_pose_sur_la_ligne_du_JOUEUR_parie():
+    """Un match parie d'un seul cote n'affiche qu'un montant, sur la bonne
+    ligne. Le poser sur l'autre joueur inverserait la lecture -- et les deux
+    joueurs sont a deux lignes d'ecart, pas a deux pages."""
+    import pandas as pd
+
+    from liste_dense import lignes
+
+    pos = {"3818322": {"a": {"cash_out": -31.9}, "b": None,
+                       "non_rattaches": []}}
+    ligne = lignes(pd.DataFrame([_match_parie()]),
+                   maintenant=1786449600.0, positions=pos)[0]
+    assert ligne["joueurs"][0]["cash_out"] == -31.9
+    assert ligne["joueurs"][1]["cash_out"] is None
+
+
+def test_sans_position_la_colonne_reste_VIDE():
+    """Une liste dense ne se remplit pas de cases inutiles : pas de tiret,
+    rien. Le tiret est reserve a une donnee ABSENTE -- une cote qu'on
+    attendait -- pas a une donnee SANS OBJET, comme la position d'un match sur
+    lequel on n'a rien parie.
+
+    L'assertion porte sur la CELLULE, pas sur la page : chercher « position »
+    dans tout le HTML repondrait « present » a cause de l'entete de colonne.
+    """
+    import pandas as pd
+
+    from liste_dense import lignes, rendu
+
+    html = rendu(lignes(pd.DataFrame([_match_parie()]),
+                        maintenant=1786449600.0, positions={}))
+    cellule = html.split('<span class="position">')[2].split("</span></span>")[0]
+    assert "€" not in cellule
+    assert "—" not in cellule
+    assert not any(c.isdigit() for c in cellule)
+
+
+def test_le_signe_du_cash_out_est_LISIBLE_dans_le_rendu():
+    """Un gain et une perte ne doivent pas se lire pareil : c'est la seule
+    chose que l'oeil cherche sur cette colonne. Le signe se lit sur la CLASSE
+    et pas seulement sur le texte, pour que la feuille de style puisse les
+    peindre differemment."""
+    import pandas as pd
+
+    from liste_dense import lignes, rendu
+
+    df = pd.DataFrame([_match_parie()])
+    perte = rendu(lignes(df, maintenant=1786449600.0,
+                         positions={"3818322": {"a": {"cash_out": -178.6},
+                                                "b": None,
+                                                "non_rattaches": []}}))
+    gain = rendu(lignes(df, maintenant=1786449600.0,
+                        positions={"3818322": {"a": {"cash_out": 42.5},
+                                               "b": None,
+                                               "non_rattaches": []}}))
+    assert "perte" in perte and "gain" not in perte
+    assert "gain" in gain and "perte" not in gain
+    # LE SIGNE EST ECRIT, et pas seulement peint. Le vert et le rouge le
+    # DOUBLENT ; s'ils le remplacaient, un daltonien lirait un gain pour une
+    # perte -- c'est la meme regle que la lettre « b »/« l » sur les prix.
+    assert "-179" in perte, (
+        "le signe n'est pas ecrit : seule la couleur distinguerait un gain "
+        "d'une perte"
+    )
+    assert "+42" in gain
+
+
+def test_un_cash_out_a_ZERO_se_lit_comme_un_GAIN_pas_comme_une_perte():
+    """Zero n'est pas une perte, et le signe le dirait si la comparaison
+    basculait a `> 0`."""
+    import pandas as pd
+
+    from liste_dense import lignes, rendu
+
+    html = rendu(lignes(pd.DataFrame([_match_parie()]), maintenant=1786449600.0,
+                        positions={"3818322": {"a": {"cash_out": 0.0},
+                                               "b": None,
+                                               "non_rattaches": []}}))
+    assert "perte" not in html
+
+
+def test_la_position_vieillit_avec_les_COTES_qui_la_calculent():
+    """Le cash-out n'a pas de pastille propre, et n'en a pas besoin : il se
+    calcule sur les cotes de la MEME ligne. Un prix perime rougit deja la
+    pastille d'exchange -- ce test dit que les deux parlent bien du meme
+    instant, et interdit qu'on les separe un jour."""
+    import pandas as pd
+
+    from live_data import SEUILS_PAR_FLUX
+    from liste_dense import lignes
+
+    vieux = SEUILS_PAR_FLUX["f_exchange"][1] + 60.0
+    ligne = lignes(pd.DataFrame([_match_parie(age_exchange_s=vieux)]),
+                   maintenant=1786449600.0,
+                   positions={"3818322": {"a": {"cash_out": -178.6},
+                                          "b": None, "non_rattaches": []}})[0]
+    assert ligne["joueurs"][0]["cash_out"] == -178.6
+    perimes = [f["etat"] for f in ligne["fraicheur"] if f["flux"] == "f_exchange"]
+    assert perimes == ["perime"], (
+        "la pastille d'exchange ne rougit pas : le montant serait affiche "
+        "avec une confiance que le prix ne merite pas"
+    )
