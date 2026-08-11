@@ -169,3 +169,114 @@ def test_un_jeton_de_la_selection_ne_sert_QU_UNE_FOIS():
 
     assert _designe("Marvin Moeller", "M Moeller") is True
     assert _designe("Moeller", "M Moeller") is False
+
+
+# ---------------------------------------------------------------------------
+# Lire les paris du compte connecte
+# ---------------------------------------------------------------------------
+
+
+def test_la_lecture_ne_demande_QUE_les_marches_a_l_ecran():
+    """On n'ouvre pas l'historique des paris pour afficher dix matchs. Et le
+    schema interroge est `TeNNet`, en LECTURE SEULE."""
+    import pandas as pd
+
+    from paris_live import charger_paris
+
+    vues = {}
+
+    def lecteur(schema, requete, params=None):
+        vues.update(schema=schema, requete=requete, params=params)
+        return pd.DataFrame(columns=["ID_BET"])
+
+    charger_paris(1, ["1.260944641", "1.260910091"], lecteur=lecteur)
+    assert vues["schema"] == "TeNNet"
+    assert set(vues["params"].values()) >= {"1.260944641", "1.260910091", 1}
+    assert "status = 1" in vues["requete"]
+    assert "FROM Bet" in vues["requete"]
+    for interdit in ("INSERT", "UPDATE", "DELETE", "REPLACE", "DROP"):
+        assert interdit not in vues["requete"].upper()
+
+
+def test_le_compte_est_LIE_et_non_interpole():
+    """Un pari est prive. Si l'identifiant de compte se collait dans le texte
+    de la requete, il suffirait d'y glisser autre chose pour lire les paris de
+    quelqu'un d'autre -- les trois comptes vivent dans la meme table."""
+    import pandas as pd
+
+    from paris_live import charger_paris
+
+    vues = {}
+
+    def lecteur(schema, requete, params=None):
+        vues.update(requete=requete, params=params)
+        return pd.DataFrame(columns=["ID_BET"])
+
+    charger_paris("8 OR 1=1", ["1.260944641"], lecteur=lecteur)
+    assert "OR 1=1" not in vues["requete"]
+    assert "8 OR 1=1" in vues["params"].values()
+    # Lier le compte ne sert a rien si la requete ne s'en sert pas pour
+    # FILTRER. Le marche 1.258126887 porte 31 paris des TROIS comptes : sans
+    # cette clause, la page les afficherait tous.
+    assert "ID_USER = :compte" in vues["requete"], (
+        "le compte est lie mais pas filtre : les paris des autres comptes "
+        "remonteraient"
+    )
+
+
+def test_un_identifiant_de_marche_HOSTILE_reste_dans_les_PARAMETRES():
+    """`read_sql_query(schema, query, params)` LIE les paramètres nommes
+    `:nom` -- sa propre docstring le dit. Rien de ce qui vient d'ailleurs n'a
+    donc a etre colle dans le texte de la requete, ni assaini a la main.
+    """
+    import pandas as pd
+
+    from paris_live import charger_paris
+
+    vues = {}
+
+    def lecteur(schema, requete, params=None):
+        vues.update(requete=requete, params=params)
+        return pd.DataFrame(columns=["ID_BET"])
+
+    hostile = "1.26' OR '1'='1"
+    charger_paris(1, [hostile, "1.260\\"], lecteur=lecteur)
+    assert "'" not in vues["requete"]
+    assert "\\" not in vues["requete"]
+    assert hostile in vues["params"].values()
+
+
+def test_sans_marche_a_l_ecran_AUCUNE_requete_n_est_emise():
+    """Une requete a vide s'executerait a chaque rafraichissement pour rien."""
+    from paris_live import charger_paris
+
+    appels = []
+    charger_paris(1, [], lecteur=lambda *a, **k: appels.append(1))
+    assert appels == []
+
+
+def test_sans_utilisateur_AUCUNE_requete_n_est_emise():
+    """Pas de session, pas de paris -- et surtout pas les paris de tout le
+    monde : la table en porte trois comptes."""
+    from paris_live import charger_paris
+
+    appels = []
+    charger_paris(None, ["1.260944641"], lecteur=lambda *a, **k: appels.append(1))
+    assert appels == []
+
+
+def test_sans_pari_les_COLONNES_attendues_sont_quand_meme_la():
+    """L'appelant lit `df["stake"]` sans regarder si le tableau est vide. Un
+    tableau sans colonnes le ferait tomber en `KeyError` les jours ou aucun
+    pari n'est en cours -- c'est-a-dire la plupart."""
+    import pandas as pd
+
+    from paris_live import charger_paris
+
+    vide = charger_paris(1, [], lecteur=lambda *a, **k: None)
+    for colonne in ("ID_BET", "ID_MARKET", "side_back_lay", "bet_libelle",
+                    "odds", "stake", "potential_profit", "liability"):
+        assert colonne in vide.columns
+    rien = charger_paris(1, ["1.260944641"],
+                         lecteur=lambda *a, **k: pd.DataFrame())
+    assert "stake" in rien.columns

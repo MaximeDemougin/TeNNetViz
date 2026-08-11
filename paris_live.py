@@ -6,6 +6,19 @@ aucun ordre : il montre une position, il ne l'engage pas.
 
 import unicodedata
 
+import pandas as pd
+
+#: Le schema de PRODUCTION, en LECTURE SEULE. Les paris n'existent que la.
+SCHEMA_PRODUCTION = "TeNNet"
+
+#: Les colonnes lues, nommees une fois. `SELECT *` embarquerait vingt-deux
+#: colonnes dont deux tiers ne servent pas, et masquerait un changement de
+#: schema derriere un KeyError lointain.
+COLONNES_PARIS = (
+    "ID_BET", "ID_MARKET", "side_back_lay", "bet_libelle", "odds", "stake",
+    "potential_profit", "liability", "created_at",
+)
+
 #: Commission de l'exchange, relevee dans ses propres trames
 #: (`"commission": 3.00`, seule valeur observee sur la collecte du 2026-08-10).
 #:
@@ -139,3 +152,44 @@ def cote_du_pari(selection, participant1, participant2) -> str | None:
     if b:
         return "b"
     return None
+
+
+def charger_paris(id_user, id_markets, lecteur=None) -> pd.DataFrame:
+    """Les paris MATCHES du compte, pour les SEULS marches donnes.
+
+    `status = 1` seulement : `status = 2` existe (151 paris sur les 30 derniers
+    jours, contre 5 140) mais sa signification n'est PAS etablie. On l'ecarte
+    en le disant, plutot que de deviner ce qu'il vaut.
+
+    TOUT CE QUI VIENT D'AILLEURS EST LIE, jamais colle dans le texte de la
+    requete. `read_sql_query(schema, query, params)` accepte des parametres
+    nommes `:nom` et sa propre docstring dit qu'ils previennent l'injection.
+    Ce module ne reprend donc PAS l'assainissement a la main de
+    `live_data._identifiants_surs`, dont la justification -- « pas d'API de
+    parametres bindes exposee » -- est fausse, verifie le 2026-08-11.
+
+    Le compte compte double : la table porte les paris de TROIS comptes, et un
+    pari est prive.
+
+    `lecteur` est injectable pour les tests, comme `live_data.charger_matchs`.
+    L'import est differe pour la meme raison : `db_utils` fait un `os.chdir`
+    des l'import.
+    """
+    marches = [str(m) for m in (id_markets or []) if m]
+    if not marches or id_user is None:
+        return pd.DataFrame(columns=list(COLONNES_PARIS))
+    if lecteur is None:
+        from live_data import _lecteur_par_defaut
+
+        lecteur = _lecteur_par_defaut()
+    lies = {f"m{i}": m for i, m in enumerate(marches)}
+    trous = ", ".join(f":{nom}" for nom in lies)
+    requete = (
+        f"SELECT {', '.join(COLONNES_PARIS)} FROM Bet "
+        f"WHERE ID_USER = :compte AND status = 1 "
+        f"AND ID_MARKET IN ({trous})"
+    )
+    df = lecteur(SCHEMA_PRODUCTION, requete, {**lies, "compte": id_user})
+    if df is None or df.empty:
+        return pd.DataFrame(columns=list(COLONNES_PARIS))
+    return df.copy()
