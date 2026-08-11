@@ -940,3 +940,168 @@ def test_l_heure_de_la_page_MATCH_est_aussi_a_l_heure_de_Paris():
     assert module._heure(1786449600) == "14:00"   # ete, CEST
     assert module._heure(1800014400) == "13:00"   # hiver, CET
     assert module._heure(None) == "—"
+
+
+# ── Les paris du compte dans la fenetre de detail ────────────────────────
+#
+# La ligne donne UN montant ; la fenetre donne le detail. Fixture PRELEVEE :
+# marche 1.260944641, ID_BET 31402 et 31396, deux lay reels du 2026-08-10.
+
+
+def _position_reelle():
+    return {
+        "a": {"n": 2, "demande": 76.39, "mise": 54.31, "gain": 76.39,
+              "cote_moyenne": 1.7109, "cote_courante": 1.30,
+              "cash_out": -31.9,
+              "paris": [
+                  {"ID_BET": 31402, "bet_libelle": "Denis Yevseyev",
+                   "side_back_lay": "lay", "odds": 1.72, "stake": 62.58,
+                   "potential_profit": 62.58, "liability": 45.06,
+                   "created_at": 1786449600.0},
+                  {"ID_BET": 31396, "bet_libelle": "Denis Yevseyev",
+                   "side_back_lay": "lay", "odds": 1.67, "stake": 13.81,
+                   "potential_profit": 13.81, "liability": 9.25,
+                   "created_at": 1786449000.0},
+              ]},
+        "b": None, "non_rattaches": [],
+    }
+
+
+def test_la_fenetre_DETAILLE_les_paris_du_compte():
+    """La ligne donne le montant, la fenetre donne le detail : chaque pari
+    avec son heure, sa cote, ce qu'il risque et ce qu'il rapporte.
+
+    Ce test verifie la STRUCTURE rendue, pas la mise en page : c'est ce qui
+    doit rester vrai quand la feuille de style change.
+    """
+    from detail_match import tableau_paris
+
+    lignes = tableau_paris(_position_reelle())
+    assert len(lignes) == 2
+    assert "Demandé" not in lignes[0], (
+        "une colonne « Demandé » identique a l'apparie repete la meme somme "
+        "et laisse croire a deux montants distincts"
+    )
+    assert lignes[0]["Sélection"] == "Denis Yevseyev"
+    assert lignes[0]["Sens"] == "lay"
+    assert lignes[0]["Cote"] == 1.72
+    assert lignes[0]["Risque"] == 45.06
+    assert lignes[0]["Gain"] == 62.58
+
+
+def test_la_fenetre_montre_le_DEMANDE_quand_il_differe_de_l_APPARIE():
+    """Un ordre n'est pas toujours servi en entier -- 8,7 % des lay. Afficher
+    le seul apparie cacherait qu'on a demande davantage ; afficher le seul
+    demande gonflerait la position. ID_BET 31398, releve tel quel : 57,72
+    demandes, 4,52 apparies."""
+    from detail_match import tableau_paris
+
+    position = _position_reelle()
+    position["a"]["paris"] = [{
+        "ID_BET": 31398, "bet_libelle": "Denis Yevseyev",
+        "side_back_lay": "lay", "odds": 1.72, "stake": 57.72,
+        "potential_profit": 4.52, "liability": 3.25,
+        "created_at": 1786449600.0}]
+    ligne = tableau_paris(position)[0]
+    assert ligne["Gain"] == 4.52
+    assert ligne["Demandé"] == 57.72
+
+
+def test_un_pari_NON_RATTACHE_apparait_quand_meme_dans_la_fenetre():
+    """Sa mise et son sens ne dependent d'aucun cote. Le cacher reviendrait a
+    faire disparaitre de l'argent reellement engage."""
+    from detail_match import tableau_paris
+
+    position = {"a": None, "b": None, "non_rattaches": [
+        {"ID_BET": 1, "bet_libelle": "Joueur Inconnu", "side_back_lay": "lay",
+         "odds": 2.0, "stake": 10.0, "potential_profit": 10.0,
+         "liability": 10.0, "created_at": 1786449600.0}]}
+    lignes = tableau_paris(position)
+    assert len(lignes) == 1
+    assert lignes[0]["Sélection"] == "Joueur Inconnu"
+
+
+def test_l_heure_d_un_pari_est_celle_de_PARIS():
+    """`created_at` est un epoch ; `pd.to_datetime(..., unit="s")` rend un
+    instant NAIF en UTC. C'est le defaut du 2026-08-11, et le garde structurel
+    des heures couvre ce module."""
+    from detail_match import tableau_paris
+
+    # 1786449600 = 2026-08-11 12:00:00 UTC, soit 14:00 a Paris (CEST).
+    position = _position_reelle()
+    position["a"]["paris"] = [position["a"]["paris"][0]]
+    assert tableau_paris(position)[0]["Heure"] == "14:00"
+
+
+def test_SANS_pari_la_fenetre_ne_rend_aucune_ligne():
+    """Pas de tableau vide sur les matchs qu'on n'a pas paries."""
+    from detail_match import tableau_paris
+
+    assert tableau_paris(None) == []
+    assert tableau_paris({"a": None, "b": None, "non_rattaches": []}) == []
+
+
+class _StreamlitEnregistreur:
+    """Un Streamlit de paille qui note ce qu'on lui demande d'afficher.
+
+    Lire la SOURCE du module ne vaut rien ici : le mot « indicatif » figure
+    aussi dans la docstring, et vider la legende laissait le test vert.
+    C'est ce qui est RENDU qu'il faut regarder.
+    """
+
+    def __init__(self):
+        self.legendes, self.titres, self.mesures, self.tableaux = [], [], [], []
+
+    def caption(self, texte, *a, **k):
+        self.legendes.append(str(texte))
+
+    def markdown(self, texte, *a, **k):
+        self.titres.append(str(texte))
+
+    def dataframe(self, table, *a, **k):
+        self.tableaux.append(table)
+
+    def metric(self, libelle, valeur, *a, **k):
+        self.mesures.append((str(libelle), str(valeur)))
+
+    def columns(self, n, *a, **k):
+        return [self] * (n if isinstance(n, int) else len(n))
+
+
+def test_la_fenetre_DIT_que_le_cash_out_est_indicatif(monkeypatch):
+    """Notre chiffre se calcule sur le MEILLEUR prix affiche ; celui de
+    l'exchange applique son propre ecart et sa liquidite, et le vrai reglement
+    nette le marche ENTIER. Afficher un montant sans cette reserve le ferait
+    prendre pour une promesse."""
+    import detail_match
+
+    faux = _StreamlitEnregistreur()
+    monkeypatch.setattr(detail_match, "st", faux)
+    detail_match.bandeau_paris({"participant1": "Yevseyev",
+                                "participant2": "Purtseladze"},
+                               _position_reelle())
+    assert faux.legendes, "aucune reserve n'est rendue sous les montants"
+    assert "INDICATIF" in " ".join(faux.legendes).upper()
+    assert ("-31,90 €" in dict(faux.mesures).get("Cash-out Yevseyev", "")
+            or "-31.90 €" in dict(faux.mesures).get("Cash-out Yevseyev", "")), \
+        dict(faux.mesures)
+
+
+def test_SANS_pari_la_fenetre_n_affiche_RIEN_du_tout(monkeypatch):
+    """Ni titre, ni tableau vide, ni reserve orpheline sur les matchs qu'on
+    n'a pas paries -- c'est-a-dire la plupart."""
+    import detail_match
+
+    faux = _StreamlitEnregistreur()
+    monkeypatch.setattr(detail_match, "st", faux)
+    detail_match.bandeau_paris({"participant1": "A", "participant2": "B"}, None)
+    assert (faux.legendes, faux.titres, faux.mesures, faux.tableaux) == ([], [], [], [])
+
+
+def test_le_bloc_des_paris_est_CABLE_dans_la_fenetre():
+    """Une reserve parfaite et jamais rendue ne protege personne."""
+    import inspect
+
+    import detail_match
+
+    assert "bandeau_paris(" in inspect.getsource(detail_match.afficher)

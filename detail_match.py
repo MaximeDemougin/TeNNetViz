@@ -334,7 +334,85 @@ def point_par_point(serie, m) -> None:
     )
 
 
-def afficher(m, serie, maintenant: float, absence_cotes: str | None = None) -> None:
+def tableau_paris(position) -> list[dict]:
+    """Les paris du compte sur ce match, un par ligne, prets a afficher.
+
+    Les paris NON RATTACHES y figurent aussi : leur mise et leur sens ne
+    dependent d'aucun cote, et les cacher ferait disparaitre de l'argent
+    reellement engage. Seul leur cash-out manque, faute de savoir sur quel
+    prix se couvrir.
+
+    LE DEMANDE ET L'APPARIE SONT DEUX COLONNES, et la premiere ne s'affiche
+    que lorsqu'ils different -- 8,7 % des lay. N'afficher que l'apparie
+    cacherait qu'on a demande davantage ; n'afficher que le demande gonflerait
+    la position, jusqu'a mille fois (`ID_BET 31421` : 200,00 pour 0,18).
+
+    L'heure passe par ``to_paris`` : c'est un epoch, et
+    ``pd.to_datetime(..., unit="s")`` rend un instant NAIF en UTC -- le defaut
+    du 2026-08-11, que le garde structurel des heures interdit desormais.
+    """
+    if not position:
+        return []
+    lots = [p for cote in ("a", "b") if position.get(cote)
+            for p in position[cote]["paris"]]
+    lots += list(position.get("non_rattaches") or [])
+    out = []
+    for pari in lots:
+        instant = pari.get("created_at")
+        ligne = {
+            "Heure": (to_paris(pd.to_datetime(float(instant), unit="s"))
+                      .strftime("%H:%M") if instant is not None else "—"),
+            "Sélection": str(pari.get("bet_libelle") or "?"),
+            "Sens": str(pari.get("side_back_lay") or "?"),
+            "Cote": pari.get("odds"),
+            "Risque": pari.get("liability"),
+            "Gain": pari.get("potential_profit"),
+        }
+        demande, apparie = pari.get("stake"), pari.get("potential_profit")
+        if (demande is not None and apparie is not None
+                and abs(float(demande) - float(apparie)) > 0.01):
+            ligne["Demandé"] = demande
+        out.append(ligne)
+    return out
+
+
+def bandeau_paris(m, position) -> None:
+    """Les paris du compte sur ce match : le detail, puis les totaux.
+
+    LE CASH-OUT EST ANNONCE INDICATIF, et il faut que ce soit ecrit : il se
+    calcule sur le MEILLEUR prix affiche, alors que l'exchange applique son
+    propre ecart et sa liquidite, et que son reglement nette le marche
+    ENTIER -- un match parie des deux cotes paie donc un peu moins que la
+    somme des deux nombres montres ici. Sans cette reserve, un montant se
+    lirait comme une promesse.
+    """
+    lignes = tableau_paris(position)
+    if not lignes:
+        return
+    st.markdown("**Vos paris**")
+    st.dataframe(pd.DataFrame(lignes), hide_index=True, width="stretch")
+    for cote in ("a", "b"):
+        p = (position or {}).get(cote)
+        if not p:
+            continue
+        joueur = _val(m, "participant1" if cote == "a" else "participant2")
+        colonnes = st.columns(4)
+        colonnes[0].metric("Risque", f"{p['mise']:,.2f} €")
+        colonnes[1].metric("Gain si gagné", f"{p['gain']:,.2f} €")
+        colonnes[2].metric("Cote moyenne", f"{p['cote_moyenne']:.3f}"
+                           if p["cote_moyenne"] else "—")
+        colonnes[3].metric(
+            f"Cash-out {joueur}",
+            "—" if p["cash_out"] is None else f"{p['cash_out']:+,.2f} €")
+    st.caption(
+        "Cash-out INDICATIF : calculé sur le meilleur prix affiché, "
+        "commission de 3 % déduite du net. L'exchange applique son propre "
+        "écart et sa liquidité, et son règlement nette le marché entier."
+    )
+
+
+def afficher(m, serie, maintenant: float, absence_cotes: str | None = None,
+             position=None) -> None:
     """Le detail complet. ``m`` est une ligne de ``live_now``, ``serie`` sa
     serie temporelle -- deja lues et protegees par l'appelant.
 
@@ -342,9 +420,14 @@ def afficher(m, serie, maintenant: float, absence_cotes: str | None = None) -> N
     il n'y en a pas et que l'appelant en sait la raison (voir
     ``graphique_cotes``). Par defaut, ce module dit ce qu'il peut constater
     seul : pas de marche apparie.
+
+    ``position`` porte les paris du compte sur ce match (voir
+    ``paris_live.positions``). ``None`` quand la page ne les charge pas :
+    le bloc disparait alors, il ne casse rien.
     """
     bandeau_score(m)
     bandeau_cotes(m)
+    bandeau_paris(m, position)
     bandeau_fraicheur(m, maintenant)
     onglets = st.tabs(["Cotes", "Statistiques", "Récit des jeux", "Point par point"])
     with onglets[0]:
