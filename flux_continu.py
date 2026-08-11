@@ -22,6 +22,8 @@ import html
 
 import pandas as pd
 
+from utils import to_paris
+
 CSS_FLUX = """
 <style>
   /* Le grisement de Streamlit, eteint. L'ancien contenu reste PLEINEMENT
@@ -97,7 +99,8 @@ def bandeau_battement(n_matchs: int, maintenant: float) -> str:
     (`liste_dense._heure`) : les deux doivent s'accorder, sans quoi un match
     paraitrait commencer apres l'heure affichee en tete de page.
     """
-    heure = pd.to_datetime(float(maintenant), unit="s").strftime("%H:%M:%S")
+    heure = to_paris(
+        pd.to_datetime(float(maintenant), unit="s")).strftime("%H:%M:%S")
     return (f'<div class="battement"><u></u><span>{html.escape(heure)}</span>'
             f'<span>· {int(n_matchs)} match(s) en cours</span></div>')
 

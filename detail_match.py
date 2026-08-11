@@ -25,6 +25,7 @@ from live_data import (
     points_uniques,
     probabilite_implicite,
 )
+from utils import to_paris
 
 PASTILLE = {"frais": "🟢", "perime": "🔴", "inconnu": "⚪"}
 
@@ -150,7 +151,10 @@ def figure_cotes(serie):
     """
     if serie is None or len(serie) == 0 or "ts" not in serie.columns:
         return None
-    temps = pd.to_datetime(serie["ts"], unit="s")
+    # L'axe du temps a l'heure de PARIS, comme la colonne « heure » de
+    # la liste : deux echelles differentes sur la meme page se liraient
+    # comme un decalage du match, pas comme un defaut d'affichage.
+    temps = to_paris(pd.to_datetime(serie["ts"], unit="s"))
     # Le SCORE de l'instant, au survol : une courbe de cotes seule ne dit pas
     # ce qui l'a fait bouger. Affiche en dur sur l'axe il serait illisible --
     # vingt etiquettes sur un match -- alors qu'au survol il est la quand on
@@ -187,7 +191,7 @@ def figure_cotes(serie):
     if "evenement" in serie.columns:
         for _, r in serie[serie["evenement"].notna()].iterrows():
             fig.add_vline(
-                x=pd.to_datetime(r["ts"], unit="s"),
+                x=to_paris(pd.to_datetime(r["ts"], unit="s")),
                 line=dict(color="rgba(128,140,150,0.35)", width=1, dash="dot"),
             )
     fig.update_layout(

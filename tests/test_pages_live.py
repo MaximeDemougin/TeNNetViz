@@ -1236,11 +1236,20 @@ def test_l_heure_affichee_est_celle_du_DEBUT_pas_du_dernier_cycle(monkeypatch):
     maintenant = time.time()
     at = _lancer(monkeypatch, _trois_matchs(maintenant))
     heures = [l["heure"] for l in structure(at)]
-    cycle = pd.to_datetime(maintenant, unit="s").strftime("%H:%M")
+    # Oracle INDEPENDANT (bibliotheque standard) : calculer l'attendu avec
+    # l'idiome du code reviendrait a le comparer a lui-meme, et c'est ce qui
+    # a laisse passer l'affichage en UTC jusqu'au 2026-08-11.
+    import datetime as _dt
+    from zoneinfo import ZoneInfo as _ZI
+
+    def _paris(ts):
+        return _dt.datetime.fromtimestamp(ts, _ZI("Europe/Paris")).strftime("%H:%M")
+
+    cycle = _paris(maintenant)
     assert len(set(heures)) == len(heures), f"toutes les heures sont egales : {heures}"
     assert cycle not in heures, \
         f"l'heure du cycle ({cycle}) est affichee comme heure de debut : {heures}"
-    attendu = pd.to_datetime(maintenant - 7200, unit="s").strftime("%H:%M")
+    attendu = _paris(maintenant - 7200)
     assert heures[0] == attendu, f"{heures[0]} au lieu de {attendu}"
 
 

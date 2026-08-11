@@ -24,6 +24,7 @@ from live_data import (
     ecart_en_ticks,
     fraicheur,
 )
+from utils import to_paris
 
 #: Les couleurs des prix sont celles du METIER : sur l'exchange, back et lay
 #: ont ces teintes depuis toujours. Ce n'est pas une decoration, c'est le code
@@ -630,9 +631,20 @@ def _prix(valeur, classe: str, mouvement=None, neuf: bool = False) -> str:
 
 
 def _heure(ts) -> str:
+    """L'heure de debut, a l'heure de PARIS.
+
+    `pd.to_datetime(epoch, unit="s")` rend un timestamp NAIF en UTC : le
+    `.strftime()` qui suit affichait donc de l'UTC, deux heures en retard
+    l'ete et une l'hiver. Signale le 2026-08-11 sur la page en direct.
+
+    `to_paris` convertit et rend un timestamp naif en heure de Paris, pour
+    que le formatage en aval ne change pas. Il gere le CHANGEMENT D'HEURE,
+    ce qu'un decalage code en dur ne ferait pas -- deux tests l'exigent, un
+    par regime.
+    """
     if ts is None or pd.isna(ts):
         return "--:--"
-    return pd.to_datetime(float(ts), unit="s").strftime("%H:%M")
+    return to_paris(pd.to_datetime(float(ts), unit="s")).strftime("%H:%M")
 
 
 def entete_competition(ligne) -> str:

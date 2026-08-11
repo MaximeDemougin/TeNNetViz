@@ -941,7 +941,10 @@ def test_en_datetime_convertit_les_secondes_epoch():
     df = pd.DataFrame([{"ts": 1785794036.9001677, "score": "6-4"}])
     resultat = en_datetime(df)
     assert pd.api.types.is_datetime64_any_dtype(resultat["ts"])
-    assert resultat["ts"].iloc[0] == pd.Timestamp("2026-08-03 21:53:56.900167704")
+    # 23:53 et non 21:53 : cette colonne est AFFICHEE, donc elle est a
+    # l'heure de PARIS depuis le 2026-08-11. L'ancienne valeur etait de
+    # l'UTC -- le defaut, epingle par son propre test.
+    assert resultat["ts"].iloc[0] == pd.Timestamp("2026-08-03 23:53:56.900167704")
 
 
 def test_en_datetime_naltere_pas_loriginal():
@@ -1816,3 +1819,16 @@ def test_a_joue_laisse_passer_une_ligne_dont_les_COTES_bougent():
     # Un vrai score reste suffisant, cotes ou pas.
     assert a_joue("1-0", "15-0") is True
     assert a_joue("1-0", "15-0", cotes_bougent=False) is True
+
+
+def test_en_datetime_rend_l_heure_de_PARIS():
+    """`live_series.ts` circule en secondes epoch ; sa mise en forme pour
+    l'affichage rendait de l'UTC. Meme defaut que `liste_dense._heure`,
+    signale le 2026-08-11."""
+    import pandas as pd
+
+    from live_data import en_datetime
+
+    df = pd.DataFrame({"ts": [1786449600, 1800014400]})
+    got = en_datetime(df)["ts"].dt.strftime("%H:%M").tolist()
+    assert got == ["14:00", "13:00"]

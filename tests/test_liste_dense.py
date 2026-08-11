@@ -33,3 +33,46 @@ def test_une_ligne_SANS_score_rend_le_TIRET_comme_une_cote_absente():
         "la colonne des sets sort VIDE au lieu du tiret employe partout "
         "ailleurs pour une donnee absente"
     )
+
+
+# ── Les heures affichees sont celles de PARIS ────────────────────────────
+#
+# Signale le 2026-08-11 : « les heures de l'app (au moins sur la page direct)
+# ne sont pas a l'heure de Paris ».
+#
+# Cause : `pd.to_datetime(epoch, unit="s")` rend un timestamp NAIF en UTC.
+# Le `.strftime()` qui suit affiche donc de l'UTC, alors que la machine et
+# l'utilisateur sont a Paris. L'app porte pourtant `utils.to_paris` depuis
+# longtemps, et trois autres pages s'en servent deja.
+#
+# LES DEUX EPOQUES SONT LE COEUR DE CES TESTS. Un correctif qui ajouterait
+# deux heures en dur passerait l'ete et se tromperait l'hiver ; seul un couple
+# ete/hiver le fait rougir.
+
+TS_ETE = 1786449600    # 2026-08-11 12:00 UTC  ->  14:00 a Paris (CEST, +2)
+TS_HIVER = 1800014400  # 2027-01-15 12:00 UTC  ->  13:00 a Paris (CET,  +1)
+
+
+def test_l_heure_de_depart_est_a_l_heure_de_PARIS():
+    from liste_dense import _heure
+
+    assert _heure(TS_ETE) == "14:00"
+
+
+def test_l_heure_suit_le_CHANGEMENT_D_HEURE():
+    """Un decalage code en dur passerait le test precedent et mentirait de
+    novembre a mars."""
+    from liste_dense import _heure
+
+    assert _heure(TS_HIVER) == "13:00"
+
+
+def test_une_heure_absente_reste_absente():
+    """La conversion ne doit pas transformer un « je ne sais pas » en une
+    heure."""
+    import pandas as pd
+
+    from liste_dense import _heure
+
+    assert _heure(None) == "--:--"
+    assert _heure(pd.NaT) == "--:--"

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 import pandas as pd
+from utils import to_paris
 
 SCHEMA = "TeNNet_test"
 
@@ -1555,7 +1556,9 @@ def en_datetime(df: pd.DataFrame, colonne: str = "ts") -> pd.DataFrame:
     if df is None or df.empty or colonne not in df.columns:
         return df
     df = df.copy()
-    df[colonne] = pd.to_datetime(df[colonne], unit="s")
+    # A l'heure de PARIS : `pd.to_datetime(epoch, unit="s")` rend un
+    # timestamp NAIF en UTC, et cette colonne est AFFICHEE.
+    df[colonne] = to_paris(pd.to_datetime(df[colonne], unit="s"))
     return df
 
 

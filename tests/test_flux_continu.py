@@ -34,9 +34,18 @@ def test_la_feuille_n_eteint_QUE_l_homme_qui_court():
 def test_le_bandeau_porte_l_HEURE_du_chargement():
     """Supprimer le grisement supprime le seul signe que les donnees bougent.
     L'heure affichee est celle du chargement REUSSI cote serveur : si le
-    cycle s'arrete, elle se fige, et ca se voit."""
+    cycle s'arrete, elle se fige, et ca se voit.
+
+    L'attendu se calcule avec la BIBLIOTHEQUE STANDARD, et c'est le coeur de
+    ce test depuis le 2026-08-11 : il le calculait avec le meme idiome que le
+    code (`pd.to_datetime(..., unit="s")`), donc il comparait le code a
+    lui-meme et serait reste vert quel que soit le fuseau affiche."""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
     html = bandeau_battement(6, 1786352606.0)
-    attendue = pd.to_datetime(1786352606.0, unit="s").strftime("%H:%M:%S")
+    attendue = dt.datetime.fromtimestamp(
+        1786352606.0, ZoneInfo("Europe/Paris")).strftime("%H:%M:%S")
     assert attendue in html
     assert "6" in html
 
@@ -190,3 +199,34 @@ def test_une_structure_jamais_marquee_est_rendue_a_l_identique():
     # restait verte). C'est cette ligne, sur le HTML exact, qui l'aurait
     # attrapee.
     assert "<span>30</span><span>0</span>" in html, html
+
+
+# ── L'heure du bandeau suit celle de la liste ────────────────────────────
+#
+# Le docstring de `bandeau_battement` l'EXIGE : « les deux doivent s'accorder,
+# sans quoi un match paraitrait commencer apres l'heure affichee en tete de
+# page ». Corriger `liste_dense._heure` sans celui-ci casserait cet invariant.
+
+TS_ETE = 1786449600    # 2026-08-11 12:00 UTC -> 14:00 a Paris (CEST)
+TS_HIVER = 1800014400  # 2027-01-15 12:00 UTC -> 13:00 a Paris (CET)
+
+
+def test_l_heure_du_bandeau_est_a_l_heure_de_PARIS():
+    from flux_continu import bandeau_battement
+
+    assert "14:00:00" in bandeau_battement(3, TS_ETE)
+
+
+def test_l_heure_du_bandeau_suit_le_changement_d_heure():
+    from flux_continu import bandeau_battement
+
+    assert "13:00:00" in bandeau_battement(3, TS_HIVER)
+
+
+def test_le_bandeau_et_la_LISTE_disent_la_meme_heure():
+    """L'invariant que le docstring annonce, enfin tenu par un test."""
+    from flux_continu import bandeau_battement
+    from liste_dense import _heure
+
+    assert _heure(TS_ETE) in bandeau_battement(1, TS_ETE)
+    assert _heure(TS_HIVER) in bandeau_battement(1, TS_HIVER)
