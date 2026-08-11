@@ -443,8 +443,17 @@ def test_la_liste_des_matchs_est_du_plus_recent_au_plus_ancien(monkeypatch):
                                    "2026-08-04", "2026-08-03", "2026-08-02"], \
         table.to_dict("records")
     # A journee egale, l'heure de debut DECROIT elle aussi.
-    assert list(table["Début"])[:2] == ["09:00", "08:00"], \
-        table.to_dict("records")
+    #
+    # La propriete est enoncee comme un ORDRE et non par deux valeurs en dur :
+    # celles-ci etaient de l'UTC, et le passage a l'heure de Paris le
+    # 2026-08-11 les a fait rougir alors que le tri -- l'objet de ce test --
+    # n'avait pas bouge. Un test qui casse quand son sujet ne change pas
+    # designe mal son sujet.
+    debuts = list(table["Début"])[:2]
+    assert debuts[0] > debuts[1], table.to_dict("records")
+    assert len(set(debuts)) == 2, (
+        "les deux heures sont EGALES : ce niveau de tri n'est pas discrimine"
+    )
     # Et les colonnes restent SOLIDAIRES de leur ligne : trier le seul
     # « Jour » sans emporter le reste melangerait les matchs entre les jours.
     assert table["Match"].iloc[0].startswith("Yannick"), \
@@ -915,3 +924,19 @@ def test_le_detail_s_affiche_SOUS_la_liste_et_pas_a_sa_place(monkeypatch):
     assert any("Santé de la collecte" in t for t in titres), titres
     assert any("Le match choisi" in t for t in titres), titres
     assert liste_des_matchs(at) is not None, "la liste a disparu"
+
+
+def test_l_heure_de_la_page_MATCH_est_aussi_a_l_heure_de_Paris():
+    """Trouve par le garde structurel, pas a l'oeil : la page « Match » porte
+    son PROPRE `_heure`, que le balayage du 2026-08-11 a fait sortir.
+
+    Deux echelles sur deux pages voisines seraient pires qu'une seule fausse :
+    le meme match afficherait deux heures differentes selon l'endroit ou on le
+    regarde.
+    """
+    import importlib
+
+    module = importlib.import_module("pages.match")
+    assert module._heure(1786449600) == "14:00"   # ete, CEST
+    assert module._heure(1800014400) == "13:00"   # hiver, CET
+    assert module._heure(None) == "—"

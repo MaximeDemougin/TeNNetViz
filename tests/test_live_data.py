@@ -1832,3 +1832,66 @@ def test_en_datetime_rend_l_heure_de_PARIS():
     df = pd.DataFrame({"ts": [1786449600, 1800014400]})
     got = en_datetime(df)["ts"].dt.strftime("%H:%M").tolist()
     assert got == ["14:00", "13:00"]
+
+
+# ── Le garde STRUCTUREL des heures ───────────────────────────────────────
+
+
+def _appels_epoch_non_convertis(chemin):
+    """Les `to_datetime(..., unit="s")` qui ne passent PAS par `to_paris`.
+
+    Analyse l'ARBRE SYNTAXIQUE et non le texte : un commentaire ou une
+    docstring qui cite l'idiome ne doit pas declencher le garde, et il y en a
+    plusieurs -- ce sont ceux qui expliquent le defaut.
+    """
+    import ast
+
+    # `utf-8-sig` : un fichier de l'app porte un BOM en tete (U+FEFF), que
+    # Python accepte a l'import mais qui fait lever `ast.parse`. Le garde ne
+    # doit pas tomber sur une particularite d'encodage.
+    arbre = ast.parse(chemin.read_text(encoding="utf-8-sig"), filename=str(chemin))
+    convertis = set()
+    fautifs = []
+    for noeud in ast.walk(arbre):
+        if not isinstance(noeud, ast.Call):
+            continue
+        nom = (noeud.func.attr if isinstance(noeud.func, ast.Attribute)
+               else getattr(noeud.func, "id", None))
+        if nom == "to_paris":
+            convertis.update(id(a) for a in noeud.args)
+        elif nom == "to_datetime" and any(
+            k.arg == "unit" and getattr(k.value, "value", None) == "s"
+            for k in noeud.keywords
+        ):
+            fautifs.append(noeud)
+    return [n for n in fautifs if id(n) not in convertis]
+
+
+def test_AUCUN_epoch_ne_devient_une_heure_sans_passer_par_PARIS():
+    """Le garde qui rend ce defaut impossible a reintroduire en silence.
+
+    Le 2026-08-11, CINQ endroits affichaient de l'UTC : l'heure de depart, le
+    bandeau de battement, l'axe du graphique, ses reperes et la serie. Une
+    seule cause -- `pd.to_datetime(epoch, unit="s")` rend un timestamp NAIF
+    en UTC -- et rien ne l'empechait de se reproduire au sixieme endroit.
+
+    Ce test balaie le code de l'app : tout epoch converti en date doit passer
+    par `utils.to_paris`. Il ne juge pas le formatage, il juge la SOURCE de
+    la valeur -- c'est la que la faute se commet.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent.parent
+    fichiers = [p for p in racine.rglob("*.py")
+                if "tests" not in p.parts
+                and ".venv" not in p.parts
+                and p.name != "utils.py"]
+    assert fichiers, "aucun fichier a inspecter : le balayage ne prouve rien"
+    coupables = []
+    for p in fichiers:
+        for noeud in _appels_epoch_non_convertis(p):
+            coupables.append(f"{p.relative_to(racine)}:{noeud.lineno}")
+    assert not coupables, (
+        "un epoch devient une heure sans passer par `utils.to_paris`, donc "
+        "s'affiche en UTC :\n  " + "\n  ".join(coupables)
+    )

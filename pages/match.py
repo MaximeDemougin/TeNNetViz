@@ -38,6 +38,7 @@ from live_data import (
     charger_points,
     charger_serie,
 )
+from utils import to_paris
 
 st.set_page_config(layout="wide")
 
@@ -107,11 +108,22 @@ def _champ(m, cle: str, defaut: str) -> str:
 
 
 def _heure(ts) -> str:
-    """L'heure de debut annoncee, en UTC comme tout le reste de la base."""
+    """L'heure de debut annoncee, a l'heure de PARIS.
+
+    Elle etait en UTC -- « comme tout le reste de la base », disait ce
+    docstring, et ce n'est plus vrai depuis le 2026-08-11 : la page en direct
+    convertit. Deux echelles sur deux pages voisines seraient pires qu'une
+    seule fausse, le meme match affichant deux heures selon l'endroit ou on
+    le regarde.
+
+    Ce site n'a PAS ete trouve a l'oeil mais par le balayage syntaxique de
+    `test_AUCUN_epoch_ne_devient_une_heure_sans_passer_par_PARIS`, des sa
+    premiere execution.
+    """
     if _absente(ts):
         return "—"
     try:
-        return pd.to_datetime(float(ts), unit="s").strftime("%H:%M")
+        return to_paris(pd.to_datetime(float(ts), unit="s")).strftime("%H:%M")
     except (TypeError, ValueError, OverflowError):
         return "—"
 
