@@ -42,10 +42,20 @@ def test_un_lay_PERDANT_rend_un_montant_negatif_SANS_commission():
 
 
 def test_le_cas_REEL_mesure_le_2026_08_10():
-    """Cez Cretu / M Moeller : 10 lay sur Moeller, 256,18 EUR de mise, cote
-    moyenne 1,935, back courant 1,14. Chiffre annonce au proprietaire."""
-    got = cash_out("lay", 256.18, 1.935, 1.14)
-    assert got == pytest.approx(-178.6, abs=1.0)
+    """Cez Cretu / M Moeller : dix lay sur Moeller, back courant 1,14.
+
+    LE MONTANT EST L'APPARIE, PAS LE DEMANDE, et c'est une correction. Sur ces
+    dix paris, `stake` totalise 256,18 mais `potential_profit` -- le montant
+    reellement APPARIE -- 254,10. Le cash-out vaut donc -179,02 et non -180,50 :
+    le chiffre annonce au proprietaire le 2026-08-10 etait calcule sur le
+    demande.
+
+    Ce n'est pas une nuance sur ce match-la. Sur 30 410 lay, 2 645 (8,7 %) ont
+    un demande different de l'apparie, et `ID_BET 31421` demande 200,00 pour
+    0,18 apparie -- mille cent fois trop.
+    """
+    got = cash_out("lay", 254.10, 1.9432, 1.14)
+    assert got == pytest.approx(-179.02, abs=0.05)
 
 
 def test_sans_prix_courant_il_n_y_a_PAS_de_cash_out():
@@ -280,3 +290,207 @@ def test_sans_pari_les_COLONNES_attendues_sont_quand_meme_la():
     rien = charger_paris(1, ["1.260944641"],
                          lecteur=lambda *a, **k: pd.DataFrame())
     assert "stake" in rien.columns
+
+
+# ---------------------------------------------------------------------------
+# La position du compte sur chaque match affiche
+#
+# Fixtures PRELEVEES sur le marche 1.260944641 (Yevseyev / Purtseladze,
+# 2026-08-10) : huit lay reels, quatre de chaque cote.
+# ---------------------------------------------------------------------------
+
+
+def _match(**surcharges):
+    base = {
+        "event_id": "3818322", "id_market": "1.260944641",
+        "participant1": "Yevseyev", "participant2": "Purtseladze",
+        "back_odds_a": 1.30, "lay_odds_a": 1.32,
+        "back_odds_b": 4.20, "lay_odds_b": 4.40,
+        "status": "InPlay",
+    }
+    base.update(surcharges)
+    return base
+
+
+def _pari(**surcharges):
+    """ID_BET 31402, releve tel quel."""
+    base = {
+        "ID_BET": 31402, "ID_MARKET": "1.260944641", "side_back_lay": "lay",
+        "bet_libelle": "Denis Yevseyev", "odds": 1.72, "stake": 62.58,
+        "potential_profit": 62.58, "liability": 45.06,
+    }
+    base.update(surcharges)
+    return base
+
+
+def test_le_montant_qui_compte_est_l_APPARIE_pas_le_DEMANDE():
+    """ID_BET 31398, releve tel quel : 57,72 demandes, 4,52 apparies. La
+    responsabilite vaut 3,25, soit 4,52 x (1,72 - 1) -- elle suit l'APPARIE.
+
+    Mesure sur 30 410 lay : `liability = potential_profit x (cote - 1)` tient
+    30 404 fois, contre 27 782 pour `stake`. Calculer sur le demande gonflerait
+    la position d'un facteur mille sur `ID_BET 31421` (200,00 demandes, 0,18
+    apparie)."""
+    import pandas as pd
+
+    from paris_live import cash_out, positions
+
+    partiel = _pari(ID_BET=31398, odds=1.72, stake=57.72,
+                    potential_profit=4.52, liability=3.25)
+    pos = positions(pd.DataFrame([partiel]), [_match()])["3818322"]["a"]
+    assert pos["cash_out"] == pytest.approx(cash_out("lay", 4.52, 1.72, 1.30))
+    assert pos["cash_out"] != pytest.approx(cash_out("lay", 57.72, 1.72, 1.30))
+    assert pos["demande"] == pytest.approx(57.72)
+    assert pos["mise"] == pytest.approx(3.25)
+
+
+def test_les_paris_d_un_meme_cote_s_ADDITIONNENT():
+    """Chaque couverture est un montant garanti ; leur somme l'est aussi."""
+    import pandas as pd
+
+    from paris_live import cash_out, positions
+
+    paris = pd.DataFrame([
+        _pari(),
+        _pari(ID_BET=31396, odds=1.67, stake=13.81, potential_profit=13.81,
+              liability=9.25),
+    ])
+    pos = positions(paris, [_match()])["3818322"]["a"]
+    assert pos["n"] == 2
+    assert pos["mise"] == pytest.approx(45.06 + 9.25)
+    assert pos["gain"] == pytest.approx(62.58 + 13.81)
+    assert pos["cash_out"] == pytest.approx(
+        cash_out("lay", 62.58, 1.72, 1.30) + cash_out("lay", 13.81, 1.67, 1.30))
+
+
+def test_un_match_parie_des_DEUX_cotes_donne_DEUX_positions():
+    """Cas reel du 2026-08-10 : Yevseyev ET Purtseladze layes sur le meme
+    marche, quatre paris chacun. Ce sont deux positions distinctes, qui se
+    couvrent a deux prix differents -- surtout pas leur somme."""
+    import pandas as pd
+
+    from paris_live import positions
+
+    paris = pd.DataFrame([
+        _pari(),
+        _pari(ID_BET=31401, bet_libelle="Saba Purtseladze", odds=2.20,
+              stake=61.12, potential_profit=61.12, liability=73.34),
+    ])
+    pos = positions(paris, [_match()])["3818322"]
+    assert pos["a"]["n"] == 1 and pos["b"]["n"] == 1
+    assert pos["a"]["cash_out"] != pos["b"]["cash_out"]
+    assert pos["a"]["cote_courante"] == 1.30
+    assert pos["b"]["cote_courante"] == 4.20
+
+
+def test_un_lay_se_couvre_sur_le_BACK_courant_du_BON_cote():
+    """Fermer un lay, c'est BACKER : le prix a prendre est `back_odds_?` du
+    cote parie, et non le lay, ni le prix de l'autre joueur. Les quatre cotes
+    de la fixture sont DISTINCTES pour que l'erreur se voie."""
+    import pandas as pd
+
+    from paris_live import cash_out, positions
+
+    pos = positions(pd.DataFrame([_pari()]), [_match()])["3818322"]["a"]
+    assert pos["cote_courante"] == 1.30
+    assert pos["cash_out"] == pytest.approx(cash_out("lay", 62.58, 1.72, 1.30))
+
+
+def test_un_back_se_couvre_sur_le_LAY_courant():
+    """Et son montant apparie est `stake` : sur les 47 paris back de
+    l'historique, `liability = stake` et `potential_profit = stake x
+    (cote - 1)`, 47 fois sur 47. L'asymetrie avec le lay est reelle."""
+    import pandas as pd
+
+    from paris_live import cash_out, positions
+
+    dos = _pari(side_back_lay="back", odds=1.72, stake=50.0,
+                potential_profit=36.0, liability=50.0)
+    pos = positions(pd.DataFrame([dos]), [_match()])["3818322"]["a"]
+    assert pos["cote_courante"] == 1.32
+    assert pos["cash_out"] == pytest.approx(cash_out("back", 50.0, 1.72, 1.32))
+
+
+def test_deux_SENS_sur_le_meme_cote_se_couvrent_chacun_sur_SA_colonne():
+    """Le cas ne s'est jamais produit -- zero selection porte les deux sens
+    dans tout l'historique -- mais prendre le sens du PREMIER pari pour toute
+    la position rendrait un montant credible et faux le jour ou il arrive.
+    Le prix de couverture se choisit pari par pari."""
+    import pandas as pd
+
+    from paris_live import cash_out, positions
+
+    paris = pd.DataFrame([
+        _pari(),
+        _pari(ID_BET=31403, side_back_lay="back", stake=50.0,
+              potential_profit=36.0, liability=50.0),
+    ])
+    pos = positions(paris, [_match()])["3818322"]["a"]
+    assert pos["cash_out"] == pytest.approx(
+        cash_out("lay", 62.58, 1.72, 1.30) + cash_out("back", 50.0, 1.72, 1.32))
+    assert pos["cote_courante"] is None      # deux prix, aucun a afficher
+
+
+def test_un_pari_NON_RATTACHE_garde_sa_mise_et_perd_son_cash_out():
+    """La mise et le risque ne dependent d'aucun cote : ils restent. Le
+    cash-out, lui, exige de savoir sur quel prix se couvrir."""
+    import pandas as pd
+
+    from paris_live import positions
+
+    paris = pd.DataFrame([_pari(bet_libelle="Joueur Inconnu")])
+    pos = positions(paris, [_match()])["3818322"]
+    assert pos["a"] is None and pos["b"] is None
+    assert len(pos["non_rattaches"]) == 1
+    assert pos["non_rattaches"][0]["liability"] == pytest.approx(45.06)
+
+
+def test_un_match_TERMINE_n_a_plus_de_cash_out():
+    """Il n'y a plus rien a couvrir. La mise et le risque restent."""
+    import pandas as pd
+
+    from paris_live import positions
+
+    pos = positions(pd.DataFrame([_pari()]),
+                    [_match(status="Finished")])["3818322"]["a"]
+    assert pos["cash_out"] is None
+    assert pos["mise"] == pytest.approx(45.06)
+
+
+def test_un_prix_ABSENT_ne_produit_pas_un_cash_out_a_zero():
+    """Zero serait un montant, et faux : la position existe toujours."""
+    import pandas as pd
+
+    from paris_live import positions
+
+    pos = positions(pd.DataFrame([_pari()]),
+                    [_match(back_odds_a=None)])["3818322"]["a"]
+    assert pos["cash_out"] is None
+    assert pos["cote_courante"] is None
+    assert pos["mise"] == pytest.approx(45.06)
+
+
+def test_la_cote_MOYENNE_est_ponderee_par_l_apparie():
+    """Ponderer par le demande donnerait un prix moyen que personne n'a
+    obtenu -- `ID_BET 31398` demande 57,72 pour 4,52 apparies."""
+    import pandas as pd
+
+    from paris_live import positions
+
+    paris = pd.DataFrame([
+        _pari(),
+        _pari(ID_BET=31398, odds=1.66, stake=57.72, potential_profit=4.52,
+              liability=3.25),
+    ])
+    pos = positions(paris, [_match()])["3818322"]["a"]
+    attendu = (1.72 * 62.58 + 1.66 * 4.52) / (62.58 + 4.52)
+    assert pos["cote_moyenne"] == pytest.approx(attendu)
+
+
+def test_un_match_SANS_pari_n_apparait_pas():
+    """La liste est dense : elle ne se remplit pas de cases vides."""
+    import pandas as pd
+
+    from paris_live import positions
+
+    assert positions(pd.DataFrame(columns=["ID_MARKET"]), [_match()]) == {}

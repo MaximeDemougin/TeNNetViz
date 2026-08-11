@@ -193,3 +193,126 @@ def charger_paris(id_user, id_markets, lecteur=None) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame(columns=list(COLONNES_PARIS))
     return df.copy()
+
+
+#: Statuts qui disent qu'il n'y a plus rien a couvrir. Repris de
+#: `live_data.charger_matchs`, qui calcule `en_cours` sur le meme jeu.
+STATUTS_FINIS = frozenset(
+    {"finished", "ended", "completed", "retired", "walkover", "cancelled"}
+)
+
+
+def _nombre(valeur):
+    """Le flottant, ou ``None`` -- y compris pour NaN, que pandas seme partout
+    et qui contaminerait silencieusement toute somme qui le touche."""
+    try:
+        f = float(valeur)
+    except (TypeError, ValueError):
+        return None
+    return None if f != f else f
+
+
+def montant_apparie(pari):
+    """Le montant REELLEMENT engage, qui n'est pas celui demande.
+
+    Un ordre n'est pas toujours servi en entier. Mesure du 2026-08-11 sur
+    30 410 lay : `liability = potential_profit x (cote - 1)` tient 30 404 fois,
+    contre 27 782 fois pour `stake`. C'est donc `potential_profit` -- la mise
+    du parieur d'en face, celle qui a trouve preneur -- qui porte la position
+    d'un LAY, et 2 645 paris (8,7 %) ont un demande different de leur apparie.
+    `ID_BET 31421` demande 200,00 pour 0,18 apparie : mille cent fois trop.
+
+    LE BACK EST L'INVERSE, et l'asymetrie est reelle : sur les 47 paris back de
+    l'historique, `liability = stake` et `potential_profit = stake x
+    (cote - 1)`, 47 fois sur 47. C'est donc `stake` qui porte la position.
+    """
+    sens = str(pari.get("side_back_lay") or "").strip().lower()
+    return _nombre(pari.get("stake" if sens == "back" else "potential_profit"))
+
+
+def _colonne_de_couverture(pari, cote) -> str:
+    """La colonne du prix auquel on FERME.
+
+    Fermer un LAY, c'est BACKER : on prend le back du cote parie. Fermer un
+    BACK, c'est LAYER. Se tromper de colonne -- ou de joueur -- rendrait un
+    montant credible et faux.
+    """
+    sens = str(pari.get("side_back_lay") or "").strip().lower()
+    return f"{'back' if sens == 'lay' else 'lay'}_odds_{cote}"
+
+
+def positions(paris, matchs) -> dict:
+    """La position du compte sur chaque match affiche.
+
+    Rend un dictionnaire indexe par `event_id`, et n'y met QUE les matchs qui
+    portent au moins un pari : une liste dense ne se remplit pas de cases
+    vides.
+
+    Les paris d'un meme cote s'ADDITIONNENT -- chaque couverture est un montant
+    garanti, leur somme l'est aussi. Un match parie des DEUX cotes donne deux
+    positions distinctes, qui se couvrent a deux prix differents : surtout pas
+    leur somme.
+
+    LE PRIX DE COUVERTURE SE CHOISIT PARI PAR PARI, et non une fois pour toute
+    la position. Aucune selection ne porte les deux sens dans l'historique
+    entier, mais prendre le sens du PREMIER pari rendrait, le jour ou cela
+    arrive, un montant credible et faux. Quand les paris d'un cote ne se
+    couvrent pas tous au meme prix, `cote_courante` reste vide : il n'y en a
+    aucune a montrer.
+    """
+    par_marche: dict[str, list] = {}
+    lignes = paris.to_dict("records") if hasattr(paris, "to_dict") else paris
+    for pari in lignes:
+        cle = str(pari.get("ID_MARKET") or "")
+        if cle:
+            par_marche.setdefault(cle, []).append(pari)
+
+    out: dict[str, dict] = {}
+    rangees = matchs.to_dict("records") if hasattr(matchs, "to_dict") else matchs
+    for match in rangees:
+        lot = par_marche.get(str(match.get("id_market") or ""))
+        if not lot:
+            continue
+        fini = str(match.get("status") or "").lower() in STATUTS_FINIS
+        groupes: dict[str, list] = {"a": [], "b": []}
+        non_rattaches = []
+        for pari in lot:
+            cote = cote_du_pari(pari.get("bet_libelle"),
+                                match.get("participant1"),
+                                match.get("participant2"))
+            (groupes[cote] if cote else non_rattaches).append(pari)
+
+        resultat = {"a": None, "b": None, "non_rattaches": non_rattaches}
+        for cote, lot_cote in groupes.items():
+            if not lot_cote:
+                continue
+            apparie = sum(montant_apparie(p) or 0.0 for p in lot_cote)
+            resultat[cote] = {
+                "n": len(lot_cote),
+                "demande": sum(_nombre(p.get("stake")) or 0.0 for p in lot_cote),
+                "mise": sum(_nombre(p.get("liability")) or 0.0 for p in lot_cote),
+                "gain": sum(_nombre(p.get("potential_profit")) or 0.0
+                            for p in lot_cote),
+                "cote_moyenne": (
+                    sum((_nombre(p.get("odds")) or 0.0) * (montant_apparie(p) or 0.0)
+                        for p in lot_cote) / apparie if apparie else None),
+                "cote_courante": None,
+                "cash_out": None,
+                "paris": lot_cote,
+            }
+            if fini:
+                continue
+            colonnes = {_colonne_de_couverture(p, cote) for p in lot_cote}
+            prix = [_nombre(match.get(_colonne_de_couverture(p, cote)))
+                    for p in lot_cote]
+            if len(colonnes) == 1:
+                resultat[cote]["cote_courante"] = prix[0]
+            montants = [cash_out(p.get("side_back_lay"), montant_apparie(p),
+                                 _nombre(p.get("odds")), courant)
+                        for p, courant in zip(lot_cote, prix)]
+            # Un seul prix manquant et la somme serait fausse d'un pari entier :
+            # on ne montre alors AUCUN chiffre plutot qu'un chiffre partiel.
+            if montants and all(m is not None for m in montants):
+                resultat[cote]["cash_out"] = sum(montants)
+        out[str(match.get("event_id") or "")] = resultat
+    return out
