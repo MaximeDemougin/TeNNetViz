@@ -7,6 +7,8 @@ import sys
 import time
 import types
 
+import pytest
+
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 
@@ -985,26 +987,31 @@ def test_la_fenetre_DETAILLE_les_paris_du_compte():
     assert lignes[0]["Sélection"] == "Denis Yevseyev"
     assert lignes[0]["Sens"] == "lay"
     assert lignes[0]["Cote"] == 1.72
-    assert lignes[0]["Risque"] == 45.06
-    assert lignes[0]["Gain"] == 62.58
+    # Le RISQUE est `stake` -- pas la colonne `liability` (45,06), fausse
+    # pour un lay. Le GAIN s'en deduit par la formule de `data.py`.
+    from paris_live import gain_net
+    assert lignes[0]["Risque"] == 62.58
+    assert lignes[0]["Gain"] == pytest.approx(gain_net("lay", 62.58, 1.72), abs=0.01)
+    assert lignes[0]["Gain"] != pytest.approx(62.58, abs=0.5)
 
 
-def test_la_fenetre_montre_le_DEMANDE_quand_il_differe_de_l_APPARIE():
-    """Un ordre n'est pas toujours servi en entier -- 8,7 % des lay. Afficher
-    le seul apparie cacherait qu'on a demande davantage ; afficher le seul
-    demande gonflerait la position. ID_BET 31398, releve tel quel : 57,72
-    demandes, 4,52 apparies."""
+def test_la_fenetre_n_affiche_PLUS_les_colonnes_fausses_de_la_base():
+    """`liability` et `potential_profit` sont fausses pour un lay, et la
+    fenetre les rendait telles quelles. La fixture les met a des valeurs
+    ABSURDES : si l'une reapparait, le test tombe.
+
+    ID_BET 31449, releve tel quel : `stake` 81,18 quand `liability` en dit
+    130,59 et `potential_profit` 77,73."""
     from detail_match import tableau_paris
 
     position = _position_reelle()
     position["a"]["paris"] = [{
-        "ID_BET": 31398, "bet_libelle": "Denis Yevseyev",
-        "side_back_lay": "lay", "odds": 1.72, "stake": 57.72,
-        "potential_profit": 4.52, "liability": 3.25,
-        "created_at": 1786449600.0}]
+        **position["a"]["paris"][0], "ID_BET": 31449, "odds": 2.68,
+        "stake": 81.18, "potential_profit": -999.0, "liability": -999.0}]
     ligne = tableau_paris(position)[0]
-    assert ligne["Gain"] == 4.52
-    assert ligne["Demandé"] == 57.72
+    assert "Demandé" not in ligne
+    assert ligne["Risque"] == 81.18
+    assert ligne["Gain"] > 0
 
 
 def test_un_pari_NON_RATTACHE_apparait_quand_meme_dans_la_fenetre():
@@ -1097,7 +1104,7 @@ def test_le_tableau_des_paris_TIENT_sur_la_forme_REELLE_de_la_base():
              "back_odds_b": 4.20, "lay_odds_b": 4.40, "status": "InPlay"}
     lignes = tableau_paris(positions(paris, [match])["3818322"])
     assert lignes[0]["Heure"] == "14:00"
-    assert lignes[0]["Risque"] == 45.06
+    assert lignes[0]["Risque"] == 62.58
 
 
 def test_SANS_pari_la_fenetre_ne_rend_aucune_ligne():

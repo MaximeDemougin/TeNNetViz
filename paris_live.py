@@ -239,22 +239,72 @@ def _nombre(valeur):
     return None if f != f else f
 
 
-def montant_apparie(pari):
-    """Le montant REELLEMENT engage, qui n'est pas celui demande.
+def risque(pari):
+    """Ce que ce pari peut PERDRE. C'est la colonne `stake`, pour les deux sens.
 
-    Un ordre n'est pas toujours servi en entier. Mesure du 2026-08-11 sur
-    30 410 lay : `liability = potential_profit x (cote - 1)` tient 30 404 fois,
-    contre 27 782 fois pour `stake`. C'est donc `potential_profit` -- la mise
-    du parieur d'en face, celle qui a trouve preneur -- qui porte la position
-    d'un LAY, et 2 645 paris (8,7 %) ont un demande different de leur apparie.
-    `ID_BET 31421` demande 200,00 pour 0,18 apparie : mille cent fois trop.
+    CORRIGE LE 2026-08-12, sur signalement du proprietaire confronte a son
+    compte reel. Le robot de production remplit `stake` depuis la colonne
+    `liability` que l'exchange rapporte pour l'offre appariee
+    (`Prod/Bet_auto/utils/functions_bet_auto.py:418-436`) :
 
-    LE BACK EST L'INVERSE, et l'asymetrie est reelle : sur les 47 paris back de
-    l'historique, `liability = stake` et `potential_profit = stake x
-    (cote - 1)`, 47 fois sur 47. C'est donc `stake` qui porte la position.
+        matched = matched[[..., "price", "liability", "side"]]
+        matched.columns = [..., "odd_layed", "stake_layed", "side"]
+
+    `stake` porte donc la RESPONSABILITE -- ce qu'on risque -- et non la mise
+    du parieur d'en face.
+
+    LES DEUX AUTRES COLONNES MONETAIRES SONT FAUSSES POUR UN LAY, et il faut
+    le dire plutot que de s'y fier : le meme robot ecrit
+    `liability = stake x (cote - 1)`, une responsabilite calculee sur une
+    responsabilite, et `potential_profit = stake`, qui n'est ni un profit ni un
+    potentiel. Sur la position Pankin du 2026-08-12, elles annoncaient 84,31 de
+    risque la ou le compte en montre 133,98.
+
+    `data.py` n'a jamais utilise ces deux colonnes : il calcule tout depuis
+    `stake` et `odds`, et il a raison depuis toujours.
+    """
+    return _nombre(pari.get("stake"))
+
+
+def gain_net(side_back_lay, mise, cote) -> float | None:
+    """Ce que ce pari RAPPORTE s'il passe, commission deduite.
+
+    LA FORMULE EST CELLE DE `data.py`, et elle n'est pas reecrite ici -- son
+    facteur de marge est LU. Deux ecritures de la meme regle divergeraient a la
+    premiere correction, et celle-ci porte des euros.
+
+        lay  ->  mise x (1 / (cote - 1)) x marge
+        back ->  mise x (cote - 1)       x marge
+
+    Layer a la cote O en risquant `mise`, c'est avoir accepte une mise de
+    backer de `mise / (O - 1)` : c'est elle qu'on gagne si la selection perd.
+    """
+    sens = str(side_back_lay or "").strip().lower()
+    if sens not in ("back", "lay"):
+        return None
+    m, o = _nombre(mise), _nombre(cote)
+    if m is None or o is None or o <= 1:
+        return None
+    from config import BOOKMAKER_MARGIN_FACTOR
+
+    return m * ((o - 1) if sens == "back" else 1 / (o - 1)) * BOOKMAKER_MARGIN_FACTOR
+
+
+def mise_du_backer(pari):
+    """La mise que le parieur d'en face a engagee -- ce qu'un LAY gagne.
+
+    C'est ELLE qui entre dans le calcul de couverture : `cash_out` raisonne en
+    termes d'exchange, ou un lay se decrit par la mise acceptee et non par la
+    responsabilite. Passer la responsabilite rendrait un montant (cote - 1)
+    fois trop petit.
     """
     sens = str(pari.get("side_back_lay") or "").strip().lower()
-    return _nombre(pari.get("stake" if sens == "back" else "potential_profit"))
+    m, o = _nombre(pari.get("stake")), _nombre(pari.get("odds"))
+    if m is None or o is None:
+        return None
+    if sens != "lay":
+        return m
+    return None if o <= 1 else m / (o - 1)
 
 
 def _colonne_de_couverture(pari, cote) -> str:
@@ -313,16 +363,21 @@ def positions(paris, matchs) -> dict:
         for cote, lot_cote in groupes.items():
             if not lot_cote:
                 continue
-            apparie = sum(montant_apparie(p) or 0.0 for p in lot_cote)
+            engage = sum(risque(p) or 0.0 for p in lot_cote)
             resultat[cote] = {
                 "n": len(lot_cote),
-                "demande": sum(_nombre(p.get("stake")) or 0.0 for p in lot_cote),
-                "mise": sum(_nombre(p.get("liability")) or 0.0 for p in lot_cote),
-                "gain": sum(_nombre(p.get("potential_profit")) or 0.0
+                # LE RISQUE EST `stake`, pour les deux sens -- voir `risque()`.
+                # Les colonnes `liability` et `potential_profit` de la base
+                # sont fausses pour un lay et ne sont plus lues.
+                "mise": engage,
+                "gain": sum(gain_net(p.get("side_back_lay"), risque(p),
+                                     _nombre(p.get("odds"))) or 0.0
                             for p in lot_cote),
+                # Ponderee par le RISQUE : c'est lui qu'on engage, donc lui qui
+                # dit combien chaque cote pese dans la moyenne.
                 "cote_moyenne": (
-                    sum((_nombre(p.get("odds")) or 0.0) * (montant_apparie(p) or 0.0)
-                        for p in lot_cote) / apparie if apparie else None),
+                    sum((_nombre(p.get("odds")) or 0.0) * (risque(p) or 0.0)
+                        for p in lot_cote) / engage if engage else None),
                 "cote_courante": None,
                 "cash_out": None,
                 "paris": lot_cote,
@@ -339,7 +394,11 @@ def positions(paris, matchs) -> dict:
             # batie en plusieurs fois a des jambes des deux signes, et la
             # prelever jambe par jambe la ferait mordre sur les gagnantes sans
             # que les perdantes la reduisent -- six pour cent de trop, mesure.
-            montants = [cash_out(p.get("side_back_lay"), montant_apparie(p),
+            # LA MISE DU BACKER, et non la responsabilite : `cash_out`
+            # raisonne en termes d'exchange, ou un lay se decrit par la mise
+            # acceptee. Lui passer la responsabilite rendrait un montant
+            # (cote - 1) fois trop petit.
+            montants = [cash_out(p.get("side_back_lay"), mise_du_backer(p),
                                  _nombre(p.get("odds")), courant,
                                  avec_commission=False)
                         for p, courant in zip(lot_cote, prix)]

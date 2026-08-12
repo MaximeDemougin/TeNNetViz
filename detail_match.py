@@ -27,6 +27,7 @@ from live_data import (
     points_uniques,
     probabilite_implicite,
 )
+from paris_live import gain_net, risque
 from utils import to_paris
 
 PASTILLE = {"frais": "🟢", "perime": "🔴", "inconnu": "⚪"}
@@ -376,10 +377,10 @@ def tableau_paris(position) -> list[dict]:
     reellement engage. Seul leur cash-out manque, faute de savoir sur quel
     prix se couvrir.
 
-    LE DEMANDE ET L'APPARIE SONT DEUX COLONNES, et la premiere ne s'affiche
-    que lorsqu'ils different -- 8,7 % des lay. N'afficher que l'apparie
-    cacherait qu'on a demande davantage ; n'afficher que le demande gonflerait
-    la position, jusqu'a mille fois (`ID_BET 31421` : 200,00 pour 0,18).
+    LE RISQUE EST `stake` ET LE GAIN S'EN DEDUIT -- corrige le 2026-08-12.
+    Les colonnes `liability` et `potential_profit` de la base sont FAUSSES
+    pour un lay (voir `paris_live.risque`), et la fenetre les affichait telles
+    quelles : 84,31 de risque la ou le compte en montrait 133,98.
 
     L'heure ne passe PAS par ``to_paris`` -- voir ``_heure_du_pari``.
     """
@@ -390,19 +391,16 @@ def tableau_paris(position) -> list[dict]:
     lots += list(position.get("non_rattaches") or [])
     out = []
     for pari in lots:
-        ligne = {
+        gain = gain_net(pari.get("side_back_lay"), risque(pari),
+                        pari.get("odds"))
+        out.append({
             "Heure": _heure_du_pari(pari.get("created_at")),
             "Sélection": str(pari.get("bet_libelle") or "?"),
             "Sens": str(pari.get("side_back_lay") or "?"),
             "Cote": pari.get("odds"),
-            "Risque": pari.get("liability"),
-            "Gain": pari.get("potential_profit"),
-        }
-        demande, apparie = pari.get("stake"), pari.get("potential_profit")
-        if (demande is not None and apparie is not None
-                and abs(float(demande) - float(apparie)) > 0.01):
-            ligne["Demandé"] = demande
-        out.append(ligne)
+            "Risque": risque(pari),
+            "Gain": None if gain is None else round(gain, 2),
+        })
     return out
 
 
