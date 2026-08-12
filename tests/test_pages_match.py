@@ -1141,6 +1141,12 @@ class _StreamlitEnregistreur:
     def columns(self, n, *a, **k):
         return [self] * (n if isinstance(n, int) else len(n))
 
+    def expander(self, libelle="", *a, **k):
+        import contextlib
+
+        self.titres.append(str(libelle))
+        return contextlib.nullcontext()
+
 
 def test_la_fenetre_DIT_que_le_cash_out_est_indicatif(monkeypatch):
     """Notre chiffre se calcule sur le MEILLEUR prix affiche ; celui de
@@ -1156,9 +1162,11 @@ def test_la_fenetre_DIT_que_le_cash_out_est_indicatif(monkeypatch):
                                _position_reelle())
     assert faux.legendes, "aucune reserve n'est rendue sous les montants"
     assert "INDICATIF" in " ".join(faux.legendes).upper()
-    assert ("-31,90 €" in dict(faux.mesures).get("Cash-out Yevseyev", "")
-            or "-31.90 €" in dict(faux.mesures).get("Cash-out Yevseyev", "")), \
-        dict(faux.mesures)
+    # Le montant vit dans le bloc de position, plus dans un `st.metric` : la
+    # reserve doit rester attachee a l'endroit ou il s'affiche.
+    rendu = " ".join(faux.titres)
+    assert "-31.90 €" in rendu or "-31,90 €" in rendu, rendu[-400:]
+    assert "perte" in rendu, "le montant negatif n'est pas peint"
 
 
 def test_SANS_pari_la_fenetre_n_affiche_RIEN_du_tout(monkeypatch):
@@ -1179,3 +1187,100 @@ def test_le_bloc_des_paris_est_CABLE_dans_la_fenetre():
     import detail_match
 
     assert "bandeau_paris(" in inspect.getsource(detail_match.afficher)
+
+
+def _position_avec_raisonnement():
+    """La position Pankin du 2026-08-12, raisonnement compris."""
+    pos = _position_reelle()
+    pos["a"].update({
+        "cote_equivalente": 2.5414, "cote_modele": 2.453,
+        "valeur": 0.036, "avant_match_min": 1.6,
+        "cote_moyenne": 1.629, "mise": 133.98, "gain": 206.52,
+        "cash_out": -31.38, "cote_courante": 1.42,
+    })
+    return pos
+
+
+def test_la_fenetre_MONTRE_le_raisonnement_du_pari(monkeypatch):
+    """La cote obtenue, celle du modele, la valeur et le delai avant le
+    debut : « pourquoi ce pari, et a quel prix ».
+
+    LA COTE MONTREE EST L'EQUIVALENTE (2,54), pas la brute (1,63) : a cote de
+    « modele 2,453 », la brute se lirait comme une valeur NEGATIVE alors que
+    le pari en a une bonne.
+    """
+    import detail_match
+
+    faux = _StreamlitEnregistreur()
+    monkeypatch.setattr(detail_match, "st", faux)
+    detail_match.bandeau_paris({"participant1": "Fajing Sun",
+                                "participant2": "Semen Pankin"},
+                               _position_avec_raisonnement())
+    rendu = " ".join(faux.titres + faux.legendes)
+    assert "2.54" in rendu or "2,54" in rendu
+    assert "2.45" in rendu or "2,45" in rendu
+    assert "+3.6" in rendu or "+3,6" in rendu
+    assert "1.6" in rendu or "1,6" in rendu, "le delai avant match manque"
+    assert "1.63" not in rendu and "1,63" not in rendu, (
+        "la cote BRUTE est montree a cote de la prediction : elles ne se "
+        "comparent pas"
+    )
+
+
+def test_le_SIGNE_de_la_valeur_et_du_cash_out_se_lit_en_COULEUR(monkeypatch):
+    """Le vocabulaire de la liste dense : vert pour ce qui va bien, rouge pour
+    ce qui va mal, et le signe ECRIT en plus de la couleur -- un daltonien
+    lirait sinon un gain pour une perte."""
+    import detail_match
+
+    faux = _StreamlitEnregistreur()
+    monkeypatch.setattr(detail_match, "st", faux)
+    detail_match.bandeau_paris({"participant1": "Fajing Sun",
+                                "participant2": "Semen Pankin"},
+                               _position_avec_raisonnement())
+    rendu = " ".join(faux.titres)
+    # QUELLE classe porte QUEL chiffre. Verifier que les deux mots figurent
+    # dans la page ne prouve rien : intervertis, ils y figurent toujours.
+    assert '<b class="perte">-31.38 €</b>' in rendu, rendu[-500:]
+    assert '<b class="gain">+3.6%</b>' in rendu, rendu[-500:]
+    assert "#34d399" in rendu and "#f87171" in rendu, (
+        "les teintes de la liste dense ne sont pas reprises"
+    )
+
+
+def test_un_cash_out_POSITIF_est_vert_ET_porte_son_signe(monkeypatch):
+    """La fixture precedente n'avait qu'un cash-out NEGATIF, dont le signe
+    s'ecrit tout seul : le « + » du gabarit ne se voit que sur un POSITIF.
+
+    Cas REEL : la position Pankin est passee gagnante le 2026-08-12 quand le
+    prix a derive de 1,63 a 2,30 -- +60,22 EUR.
+    """
+    import detail_match
+
+    faux = _StreamlitEnregistreur()
+    monkeypatch.setattr(detail_match, "st", faux)
+    position = _position_avec_raisonnement()
+    position["a"].update({"cash_out": 60.22, "cote_courante": 2.30})
+    detail_match.bandeau_paris({"participant1": "Fajing Sun",
+                                "participant2": "Semen Pankin"}, position)
+    rendu = " ".join(faux.titres)
+    assert '<b class="gain">+60.22 €</b>' in rendu, rendu[-500:]
+
+
+def test_un_LAY_dit_sur_QUI_le_pari_porte_vraiment(monkeypatch):
+    """« lay Fajing Sun » veut dire « sur Semen Pankin », et c'est ainsi que
+    le proprietaire en parle (« le pari sur Pankin, lay contre Sun »). La
+    fenetre doit porter les deux lectures, sans quoi le bloc semble designer
+    le joueur contre lequel on a mise."""
+    import detail_match
+
+    faux = _StreamlitEnregistreur()
+    monkeypatch.setattr(detail_match, "st", faux)
+    detail_match.bandeau_paris({"participant1": "Fajing Sun",
+                                "participant2": "Semen Pankin"},
+                               _position_avec_raisonnement())
+    rendu = " ".join(faux.titres)
+    assert "Fajing Sun" in rendu
+    assert "Semen Pankin" in rendu, (
+        "le joueur sur lequel le pari porte vraiment n'est pas nomme"
+    )

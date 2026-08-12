@@ -16,7 +16,11 @@ SCHEMA_PRODUCTION = "TeNNet"
 #: schema derriere un KeyError lointain.
 COLONNES_PARIS = (
     "ID_BET", "ID_MARKET", "side_back_lay", "bet_libelle", "odds", "stake",
-    "potential_profit", "liability", "created_at",
+    "created_at",
+    # Le RAISONNEMENT du pari : la cote que le modele estimait juste, et le
+    # delai avant le debut du match. `liability` et `potential_profit` ne sont
+    # PLUS lues -- elles sont fausses pour un lay (voir `risque`).
+    "pred", "delta_time_min",
 )
 
 #: Commission de l'exchange, relevee dans ses propres trames
@@ -239,6 +243,21 @@ def _nombre(valeur):
     return None if f != f else f
 
 
+def _moyenne_ponderee(valeurs, poids) -> float | None:
+    """La moyenne des valeurs CONNUES, ponderee. ``None`` s'il n'y en a
+    aucune -- un raisonnement absent n'est pas un raisonnement nul."""
+    paires = [(v, p or 0.0) for v, p in zip(valeurs, poids) if v is not None]
+    total = sum(p for _, p in paires)
+    if not paires or total <= 0:
+        return None
+    return sum(v * p for v, p in paires) / total
+
+
+def _minimum(valeurs) -> float | None:
+    connues = [v for v in valeurs if v is not None]
+    return min(connues) if connues else None
+
+
 def risque(pari):
     """Ce que ce pari peut PERDRE. C'est la colonne `stake`, pour les deux sens.
 
@@ -288,6 +307,40 @@ def gain_net(side_back_lay, mise, cote) -> float | None:
     from config import BOOKMAKER_MARGIN_FACTOR
 
     return m * ((o - 1) if sens == "back" else 1 / (o - 1)) * BOOKMAKER_MARGIN_FACTOR
+
+
+def cote_equivalente(sens, cote) -> float | None:
+    """La cote de BACK a laquelle ce pari revient, commission comprise.
+
+    Layer l'adversaire a 1,63, c'est backer notre joueur a 2,54. Sans cette
+    conversion, la fenetre afficherait « cote 1,63 » a cote de « modele
+    2,453 » : deux nombres qui ne se comparent pas, et dont l'ecart se lirait
+    a l'envers.
+
+    UNE SEULE formule dans ce module : l'equivalente, c'est le gain d'une
+    unite, plus cette unite. La reecrire ici la ferait diverger de `gain_net`
+    a la premiere correction.
+    """
+    g = gain_net(sens, 1.0, cote)
+    return None if g is None else 1.0 + g
+
+
+def valeur(sens, cote, pred) -> float | None:
+    """L'ecart entre ce qu'on a OBTENU et ce que le modele estime JUSTE.
+
+    LA COLONNE `value` DE LA BASE NE VAUT PAS CELA : elle stocke
+    `cote / pred - 1`, soit -33,6 % sur la position Pankin du 2026-08-12 --
+    un chiffre qui ferait croire a un mauvais pari alors qu'il en est un bon.
+    Elle compare une cote de LAY a une prediction de BACK.
+
+    On reprend la formule que le robot lui-meme journalise
+    (`rb / pred - 1`, `functions_bet_auto.py:1518-1521`) : la cote
+    EQUIVALENTE, rapportee a la prediction.
+    """
+    eq, p = cote_equivalente(sens, cote), _nombre(pred)
+    if eq is None or p is None or p <= 0:
+        return None
+    return eq / p - 1.0
 
 
 def mise_du_backer(pari):
@@ -378,6 +431,25 @@ def positions(paris, matchs) -> dict:
                 "cote_moyenne": (
                     sum((_nombre(p.get("odds")) or 0.0) * (risque(p) or 0.0)
                         for p in lot_cote) / engage if engage else None),
+                # LE RAISONNEMENT, pondere par le RISQUE comme la cote
+                # moyenne : c'est lui qu'on engage, donc lui qui dit combien
+                # chaque pari pese. Une moyenne simple flatterait la position
+                # des que les petits paris sont les mieux payes.
+                "cote_equivalente": _moyenne_ponderee(
+                    [cote_equivalente(p.get("side_back_lay"), _nombre(p.get("odds")))
+                     for p in lot_cote], [risque(p) for p in lot_cote]),
+                "cote_modele": _moyenne_ponderee(
+                    [_nombre(p.get("pred")) for p in lot_cote],
+                    [risque(p) for p in lot_cote]),
+                "valeur": _moyenne_ponderee(
+                    [valeur(p.get("side_back_lay"), _nombre(p.get("odds")),
+                            p.get("pred")) for p in lot_cote],
+                    [risque(p) for p in lot_cote]),
+                # Le pari le plus RECENT : il dit a quelle distance du debut la
+                # position a fini de se construire. Le minimum, donc, et non
+                # une moyenne -- c'est la fin de la construction qui compte.
+                "avant_match_min": _minimum(
+                    [_nombre(p.get("delta_time_min")) for p in lot_cote]),
                 "cote_courante": None,
                 "cash_out": None,
                 "paris": lot_cote,

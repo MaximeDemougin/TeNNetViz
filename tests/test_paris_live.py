@@ -285,7 +285,7 @@ def test_sans_pari_les_COLONNES_attendues_sont_quand_meme_la():
 
     vide = charger_paris(1, [], lecteur=lambda *a, **k: None)
     for colonne in ("ID_BET", "ID_MARKET", "side_back_lay", "bet_libelle",
-                    "odds", "stake", "potential_profit", "liability"):
+                    "odds", "stake", "pred", "delta_time_min"):
         assert colonne in vide.columns
     rien = charger_paris(1, ["1.260944641"],
                          lecteur=lambda *a, **k: pd.DataFrame())
@@ -723,3 +723,89 @@ def test_le_cash_out_se_calcule_sur_la_mise_du_BACKER():
     assert pos["cash_out"] < 0, (
         "on a laye Sun a 1,63 et il vaut 1,47 : la position PERD"
     )
+
+
+# ---------------------------------------------------------------------------
+# Le RAISONNEMENT du pari : a quel prix, contre quel prix, et quand
+# ---------------------------------------------------------------------------
+
+
+def test_la_cote_EQUIVALENTE_d_un_lay_est_celle_d_un_back():
+    """Layer a 1,63, c'est backer l'adversaire a 2,54 -- commission comprise.
+
+    Sans cette conversion, la fenetre afficherait « cote 1,63 » a cote de
+    « modele 2,453 » : deux nombres qui ne se comparent pas, et dont l'ecart
+    se lirait a l'envers.
+    """
+    from paris_live import cote_equivalente, gain_net
+
+    assert cote_equivalente("lay", 1.63) == pytest.approx(2.5397, abs=0.001)
+    assert cote_equivalente("back", 2.54) == pytest.approx(2.4938, abs=0.001)
+    # UNE SEULE formule dans le module : l'equivalente se deduit du gain d'une
+    # unite. Deux ecritures divergeraient a la premiere correction.
+    assert cote_equivalente("lay", 1.63) == pytest.approx(
+        1 + gain_net("lay", 1.0, 1.63))
+    assert cote_equivalente("place", 1.63) is None
+    assert cote_equivalente("lay", 1.0) is None
+
+
+def test_la_VALEUR_se_mesure_sur_la_cote_equivalente_PAS_sur_la_brute():
+    """La colonne `value` de la base vaut `cote / pred - 1`, soit -33,6 % sur
+    la position Pankin -- un chiffre qui ferait croire a un mauvais pari.
+
+    La valeur REELLE compare ce qu'on a obtenu (2,54) a ce que le modele
+    estime (2,453) : +3,5 %. C'est la formule que le robot lui-meme
+    journalise (`rb / pred - 1`).
+    """
+    from paris_live import valeur
+
+    assert valeur("lay", 1.63, 2.453) == pytest.approx(0.0353, abs=0.0005)
+    assert valeur("lay", 1.62, 2.453) == pytest.approx(0.0454, abs=0.0005)
+    assert valeur("lay", 1.63, None) is None
+    assert valeur("lay", 1.63, 0.0) is None
+
+
+def test_la_position_porte_le_RAISONNEMENT_du_pari():
+    """Ponderes par le RISQUE, comme la cote moyenne : c'est lui qu'on engage.
+
+    Sur les deux lay reels de Pankin, la valeur d'ensemble vaut +3,6 % -- entre
+    les +3,5 % du gros pari et les +4,5 % du petit, et bien plus pres du
+    premier. Une moyenne simple donnerait +4,0 % et flatterait la position.
+    """
+    import pandas as pd
+
+    from paris_live import positions
+
+    match = {"event_id": "3822442", "id_market": "1.261003745",
+             "participant1": "Fajing Sun", "participant2": "Semen Pankin",
+             "back_odds_a": 1.47, "lay_odds_a": 1.48,
+             "back_odds_b": 3.05, "lay_odds_b": 3.15, "status": "InPlay"}
+    paris = [{**p, "pred": 2.453, "delta_time_min": d}
+             for p, d in zip(PARIS_PANKIN, (2.7, 1.6))]
+    pos = positions(pd.DataFrame(paris), [match])["3822442"]["a"]
+    assert pos["cote_equivalente"] == pytest.approx(2.5414, abs=0.001)
+    assert pos["cote_modele"] == pytest.approx(2.453, abs=0.001)
+    assert pos["valeur"] == pytest.approx(0.036, abs=0.0006)
+    assert pos["valeur"] != pytest.approx(0.0404, abs=0.0006), (
+        "la moyenne est SIMPLE et non ponderee par le risque"
+    )
+    # Le pari le plus RECENT : c'est lui qui dit a quelle distance du debut la
+    # position a fini de se construire.
+    assert pos["avant_match_min"] == pytest.approx(1.6)
+
+
+def test_sans_prediction_le_raisonnement_reste_VIDE_et_ne_bloque_rien():
+    """Les paris anciens n'ont pas tous de `pred`. La position doit rester
+    affichable : un raisonnement absent n'est pas une position absente."""
+    import pandas as pd
+
+    from paris_live import positions
+
+    match = {"event_id": "3822442", "id_market": "1.261003745",
+             "participant1": "Fajing Sun", "participant2": "Semen Pankin",
+             "back_odds_a": 1.47, "lay_odds_a": 1.48, "status": "InPlay"}
+    pos = positions(pd.DataFrame(PARIS_PANKIN), [match])["3822442"]["a"]
+    assert pos["mise"] == pytest.approx(133.98)
+    assert pos["cote_modele"] is None
+    assert pos["valeur"] is None
+    assert pos["avant_match_min"] is None

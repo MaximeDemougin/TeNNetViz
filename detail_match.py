@@ -11,6 +11,7 @@ proteger cette lecture lui-meme.
 """
 
 import datetime
+import html
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -404,8 +405,128 @@ def tableau_paris(position) -> list[dict]:
     return out
 
 
+#: La feuille de style du bloc de position. Elle REPREND les teintes de la
+#: liste dense -- vert #34d399, rouge #f87171, bleu back, rose lay -- plutot
+#: que d'en inventer : l'operateur lit deja ce code ailleurs, et deux
+#: vocabulaires de couleur dans la meme page se contrediraient.
+CSS_PARIS = """
+<style>
+  .paris-live { display: grid; gap: .5rem; margin: .2rem 0 .6rem; }
+  .paris-live .pos {
+    border: 1px solid rgba(128,128,128,0.22); border-radius: 10px;
+    padding: .55rem .75rem; border-left: 3px solid var(--teinte);
+    font-variant-numeric: tabular-nums;
+  }
+  .paris-live .pos.lay  { --teinte: #E06A98; }
+  .paris-live .pos.back { --teinte: #4C93F0; }
+  .paris-live .tete {
+    display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
+    margin-bottom: .45rem;
+  }
+  .paris-live .joueur { font-size: 1.02rem; font-weight: 650; }
+  .paris-live .sens {
+    font-size: .62rem; text-transform: uppercase; letter-spacing: .09em;
+    padding: .08rem .38rem; border-radius: 4px; color: var(--teinte);
+    border: 1px solid var(--teinte);
+  }
+  .paris-live .via { font-size: .78rem; opacity: .62; }
+  .paris-live .rangee {
+    display: flex; gap: 1.4rem; flex-wrap: wrap; margin-top: .35rem;
+  }
+  .paris-live .rangee.raison { border-top: 1px dashed rgba(128,128,128,0.22);
+    padding-top: .4rem; }
+  .paris-live .champ { display: grid; gap: .05rem; }
+  .paris-live .champ em {
+    font-style: normal; font-size: .6rem; letter-spacing: .09em;
+    text-transform: uppercase; opacity: .45;
+  }
+  .paris-live .champ b { font-size: .96rem; font-weight: 620; }
+  .paris-live .gain  { color: #34d399; }
+  .paris-live .perte { color: #f87171; }
+</style>
+"""
+
+
+def _champ(libelle: str, valeur: str, classe: str = "") -> str:
+    c = f' class="{classe}"' if classe else ""
+    return (f'<span class="champ"><em>{html.escape(libelle)}</em>'
+            f'<b{c}>{html.escape(valeur)}</b></span>')
+
+
+def _signe(montant, gabarit: str = "{:+,.2f} €") -> tuple[str, str]:
+    """(texte, classe). Le signe est ECRIT autant que peint : la couleur le
+    DOUBLE, elle ne le remplace pas -- meme regle que la colonne de la liste,
+    et pour la meme raison (un daltonien lirait un gain pour une perte)."""
+    if montant is None:
+        return "—", ""
+    return gabarit.format(montant), ("gain" if montant >= 0 else "perte")
+
+
+def _delai(minutes) -> str:
+    """Le delai avant le debut, avec UNE decimale sous dix minutes.
+
+    C'est la que ce delai se joue : la mesure des doubles distingue la fenetre
+    0-2 min de la fenetre 3-5 min, et arrondir 1,6 en 2 effacerait ce qui
+    compte. Au-dela, la decimale n'apprend rien.
+    """
+    if minutes is None:
+        return "—"
+    return (f"{minutes:.1f} min" if abs(float(minutes)) < 10
+            else f"{minutes:.0f} min")
+
+
+def bloc_position(m, cote: str, p: dict) -> str:
+    """Le bloc d'une position : l'etat, puis le RAISONNEMENT.
+
+    LE LAY DIT SUR QUI IL PORTE VRAIMENT. « lay Fajing Sun » veut dire « sur
+    Semen Pankin », et c'est ainsi que le proprietaire en parle. Nommer la
+    seule selection ferait lire le bloc comme un pari SUR le joueur contre
+    lequel on a mise.
+
+    LA COTE MONTREE EST L'EQUIVALENTE, jamais la brute : a cote de la
+    prediction du modele, une cote de lay se lirait comme une valeur negative
+    alors que le pari en a une bonne (-33,6 % contre +3,6 % sur la position
+    Pankin du 2026-08-12).
+    """
+    sens = str((p["paris"][0].get("side_back_lay") if p.get("paris") else "")
+               or "").strip().lower()
+    selection = _val(m, "participant1" if cote == "a" else "participant2")
+    adverse = _val(m, "participant2" if cote == "a" else "participant1")
+    via = (f'<span class="via">≡ sur {html.escape(str(adverse))}</span>'
+           if sens == "lay" else "")
+    cash, classe_cash = _signe(p.get("cash_out"))
+    val, classe_val = _signe(p.get("valeur"), "{:+.1%}")
+    etat = "".join([
+        _champ("risque", f"{p['mise']:,.2f} €"),
+        _champ("gain si gagné", f"{p['gain']:,.2f} €", "gain"),
+        _champ("cash-out", cash, classe_cash),
+        _champ("paris", f"{p['n']}"),
+    ])
+    raison = "".join([
+        _champ("cote obtenue", f"{p['cote_equivalente']:.2f}"
+               if p.get("cote_equivalente") else "—"),
+        _champ("modèle", f"{p['cote_modele']:.2f}"
+               if p.get("cote_modele") else "—"),
+        _champ("valeur", val, classe_val),
+        # UNE DECIMALE sous dix minutes : c'est la que ce delai se joue --
+        # la mesure des doubles distingue 0-2 min de 3-5 min, et arrondir
+        # 1,6 en 2 effacerait justement ce qui compte.
+        _champ("avant match", _delai(p.get("avant_match_min"))),
+        _champ("prix courant", f"{p['cote_courante']:.2f}"
+               if p.get("cote_courante") else "—"),
+    ])
+    return (
+        f'<div class="pos {html.escape(sens) if sens in ("back", "lay") else ""}">'
+        f'<div class="tete"><span class="joueur">{html.escape(str(selection))}</span>'
+        f'<span class="sens">{html.escape(sens or "?")}</span>{via}</div>'
+        f'<div class="rangee">{etat}</div>'
+        f'<div class="rangee raison">{raison}</div>'
+        "</div>"
+    )
+
+
 def bandeau_paris(m, position) -> None:
-    """Les paris du compte sur ce match : le detail, puis les totaux.
+    """Les paris du compte sur ce match : les positions, puis le detail.
 
     LE CASH-OUT EST ANNONCE INDICATIF, et il faut que ce soit ecrit : il se
     calcule sur le MEILLEUR prix affiche, alors que l'exchange applique son
@@ -417,21 +538,12 @@ def bandeau_paris(m, position) -> None:
     lignes = tableau_paris(position)
     if not lignes:
         return
-    st.markdown("**Vos paris**")
-    st.dataframe(pd.DataFrame(lignes), hide_index=True, width="stretch")
-    for cote in ("a", "b"):
-        p = (position or {}).get(cote)
-        if not p:
-            continue
-        joueur = _val(m, "participant1" if cote == "a" else "participant2")
-        colonnes = st.columns(4)
-        colonnes[0].metric("Risque", f"{p['mise']:,.2f} €")
-        colonnes[1].metric("Gain si gagné", f"{p['gain']:,.2f} €")
-        colonnes[2].metric("Cote moyenne", f"{p['cote_moyenne']:.3f}"
-                           if p["cote_moyenne"] else "—")
-        colonnes[3].metric(
-            f"Cash-out {joueur}",
-            "—" if p["cash_out"] is None else f"{p['cash_out']:+,.2f} €")
+    blocs = [bloc_position(m, cote, (position or {}).get(cote))
+             for cote in ("a", "b") if (position or {}).get(cote)]
+    st.markdown(CSS_PARIS + '<div class="paris-live">' + "".join(blocs)
+                + "</div>", unsafe_allow_html=True)
+    with st.expander(f"Le détail, pari par pari ({len(lignes)})"):
+        st.dataframe(pd.DataFrame(lignes), hide_index=True, width="stretch")
     st.caption(
         "Cash-out INDICATIF : calculé sur le meilleur prix affiché, "
         "commission de 3 % déduite du net. L'exchange applique son propre "
