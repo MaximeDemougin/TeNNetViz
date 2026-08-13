@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import datetime as _dt
 import re
 import logging
 
@@ -700,14 +701,17 @@ def load_future_matchs_missing_betfair(within_minutes: int = 60):
 
 
 @st.cache_data(ttl=DATA_CACHE_TTL_FUTURE, show_spinner=False)
-def load_players_betfair_coverage(year: int = 2026):
-    """For every singles player (ATP + WTA) appearing in matches of ``year``,
-    return total matches vs matches found in ``betfair_links`` (joined on
-    ``ID_MATCH``).
+def load_players_betfair_coverage(start_date: _dt.date):
+    """For every singles player (ATP + WTA) appearing in matches played on or
+    after ``start_date``, return total matches vs matches found in
+    ``betfair_links`` (joined on ``ID_MATCH``).
+
+    ``tourney_date`` is a DATETIME, so comparing it to the ISO day takes that
+    whole day, from midnight -- « a partir du 1er juin » includes June 1st.
 
     Doubles are intentionally excluded (4 players per match, less actionable).
     """
-    year = int(year)
+    start_iso = pd.Timestamp(start_date).strftime("%Y-%m-%d")
     query = """
         SELECT compet, player,
                COUNT(*) AS total_matches,
@@ -717,28 +721,28 @@ def load_players_betfair_coverage(year: int = 2026):
             SELECT 'atp' AS compet, m.winner_name AS player, m.ID_MATCH AS mid, bl.ID_MATCH AS bl_id
             FROM men_matchs m
             LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
-            WHERE YEAR(m.tourney_date) = :year
+            WHERE m.tourney_date >= :start_date
             UNION ALL
             SELECT 'atp', m.loser_name, m.ID_MATCH, bl.ID_MATCH
             FROM men_matchs m
             LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
-            WHERE YEAR(m.tourney_date) = :year
+            WHERE m.tourney_date >= :start_date
             UNION ALL
             SELECT 'wta', m.winner_name, m.ID_MATCH, bl.ID_MATCH
             FROM women_matchs m
             LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
-            WHERE YEAR(m.tourney_date) = :year
+            WHERE m.tourney_date >= :start_date
             UNION ALL
             SELECT 'wta', m.loser_name, m.ID_MATCH, bl.ID_MATCH
             FROM women_matchs m
             LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
-            WHERE YEAR(m.tourney_date) = :year
+            WHERE m.tourney_date >= :start_date
         ) p
         WHERE player IS NOT NULL AND player <> ''
         GROUP BY compet, player
     """
     try:
-        df = read_sql_query(BDD, query, params={"year": year})
+        df = read_sql_query(BDD, query, params={"start_date": start_iso})
     except Exception:
         logger.exception("load_players_betfair_coverage: failed")
         return pd.DataFrame()

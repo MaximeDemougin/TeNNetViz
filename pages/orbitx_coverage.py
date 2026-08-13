@@ -1,8 +1,10 @@
 # ruff: noqa: E402
 """Analyse de couverture Orbitx (betfair_links).
 
-Liste les joueurs (ATP/WTA) ayant joué des matchs sur l'année courante
-sans qu'aucun de leurs matchs n'apparaisse dans `betfair_links`.
+Liste les joueurs (ATP/WTA) ayant joué des matchs depuis une date choisie
+sans qu'aucun de leurs matchs n'apparaisse dans `betfair_links`. La période
+n'est plus une année civile : « à partir du » permet de demander « et
+depuis juin ? » sans être renvoyé au 1er janvier.
 """
 
 from __future__ import annotations
@@ -32,13 +34,18 @@ if not st.session_state.get("logged_in", False):
 current_year = _dt.date.today().year
 col1, col2, col3 = st.columns([1, 1, 2])
 with col1:
-    year = st.number_input(
-        "Année",
-        min_value=2015,
-        max_value=current_year + 1,
-        value=current_year,
-        step=1,
+    start_date = st.date_input(
+        "À partir du",
+        value=_dt.date(current_year, 1, 1),
+        min_value=_dt.date(2015, 1, 1),
+        max_value=_dt.date.today(),
+        format="DD/MM/YYYY",
     )
+    # Champ vidé par l'utilisateur : Streamlit rend None. On retombe sur
+    # l'année civile en cours plutôt que de faire lever la page.
+    if start_date is None:
+        start_date = _dt.date(current_year, 1, 1)
+start_label = start_date.strftime("%d/%m/%Y")
 with col2:
     compet_filter = st.multiselect(
         "Compétitions",
@@ -54,10 +61,10 @@ with col3:
     )
 
 with st.spinner("Chargement..."):
-    df = load_players_betfair_coverage(year=int(year))
+    df = load_players_betfair_coverage(start_date)
 
 if df is None or df.empty:
-    st.warning("Aucune donnée disponible pour cette année.")
+    st.warning(f"Aucune donnée disponible depuis le {start_label}.")
     st.stop()
 
 if compet_filter:
@@ -102,7 +109,8 @@ else:
         hide_index=True,
     )
     st.caption(
-        f"{len(never_found)} joueur(s) sans aucun match présent dans `betfair_links` en {int(year)}."
+        f"{len(never_found)} joueur(s) sans aucun match présent dans `betfair_links` "
+        f"depuis le {start_label}."
     )
 
 st.divider()
@@ -141,6 +149,6 @@ csv_bytes = df.to_csv(index=False).encode("utf-8")
 st.download_button(
     "📥 Télécharger le rapport complet (CSV)",
     data=csv_bytes,
-    file_name=f"orbitx_coverage_{int(year)}.csv",
+    file_name=f"orbitx_coverage_depuis_{start_date.isoformat()}.csv",
     mime="text/csv",
 )
