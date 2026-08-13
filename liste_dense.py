@@ -256,6 +256,10 @@ CSS = f"""
     font-variant-numeric: tabular-nums; font-size: .72rem; }}
   .liste-dense .position .gain {{ color: #34d399; }}
   .liste-dense .position .perte {{ color: #f87171; }}
+
+  /* Un FAIT, pas une alerte : le match est reel et ses cotes sont a jour.
+     Le gris de la fraicheur ordinaire, jamais le rouge du perime. */
+  .liste-dense .flux em.sans-score {{ opacity: .5; font-style: normal; }}
   /* Un ENGAGEMENT n'est pas un resultat : ni vert, ni rouge, ni signe. Il ne
      dit que « il y a de l'argent la-dessus ». */
   .liste-dense .position .engage {{ color: rgba(200,200,205,0.55); }}
@@ -557,17 +561,44 @@ def jeux_par_joueur(score):
     return a, b
 
 
+#: La valeur de `live_now.source_score` qui dit « aucune source de score ».
+#: Le publieur la pose sur les lignes tirees des SEULES cotes d'exchange :
+#: ni evenement API, ni poussee du canal OrbitX, ni flux WS.
+SOURCE_COTES_SEULES = "exchange_seul"
+
+
+def sans_source_de_score(m) -> bool:
+    """Cette ligne a-t-elle une source de score, ou seulement des cotes ?
+
+    ELLE SUIT LA SOURCE, PAS L'ABSENCE DE SCORE. Un match dont la source
+    existe mais n'a rien dit encore -- premier jeu, l'API l'annonce sans
+    score -- n'est PAS aveugle : elle parlera. Confondre les deux ferait
+    marquer toutes les lignes des premieres secondes d'un match.
+    """
+    return str(m.get("source_score") or "") == SOURCE_COTES_SEULES
+
+
 def etat_fraicheur(m, maintenant: float) -> list:
     """L'etat et l'age de chaque flux, dans l'ordre de ``SEUILS_PAR_FLUX``.
 
     Cet ordre est le contrat annonce a l'utilisateur par l'infobulle : il
     fait partie de ce qui se teste.
     """
+    aveugle = sans_source_de_score(m)
     out = []
     for flux, (cle, seuil, libelle, question) in SEUILS_PAR_FLUX.items():
         age = age_a_la_lecture(m.get(cle), m.get("updated_ts"), maintenant)
+        etat = fraicheur(age, seuil)
+        # UNE PASTILLE NE DOIT PAS AFFIRMER CE QU'ELLE NE SAIT PAS. Sur une
+        # ligne publiee a partir des seules cotes, `age_score_s` vaut l'age du
+        # CYCLE de publication -- deux secondes -- et la pastille annoncait
+        # donc « frais » pour un match dont AUCUNE source ne donne le score.
+        # Une pastille verte sur une absence est pire qu'une pastille absente :
+        # elle affirme. Defaut trouve le 2026-08-13 sur les matchs de Hambourg.
+        if flux == "f_score" and aveugle:
+            etat = "inconnu"
         out.append({
-            "flux": flux, "etat": fraicheur(age, seuil), "age": age,
+            "flux": flux, "etat": etat, "age": age,
             "libelle": libelle, "seuil": seuil, "question": question,
         })
     return out
@@ -631,6 +662,9 @@ def lignes(df, maintenant: float, mouvements=None, positions=None) -> list:
             # Ecrire LEQUEL est mort, plutot qu'une pastille rouge anonyme.
             "morts": [NOMS_COURTS.get(f["flux"], f["flux"]) for f in etats
                       if f["etat"] == "perime"],
+            # Un match REEL dont on n'a que les cotes. Sans cette mention, sa
+            # ligne -- sans score, sans jeux -- se lit comme une ligne vide.
+            "cotes_seules": sans_source_de_score(m),
         })
     return out
 
@@ -843,6 +877,10 @@ def rendu(structure: list, ouvert: str = "", entetes: bool = True,
         pastilles = "".join(
             f'<u class="{f["etat"]}"></u>' for f in ligne["fraicheur"]
         )
+        if ligne.get("cotes_seules"):
+            # A cote des pastilles, la ou vit deja tout ce qui se dit sur les
+            # SOURCES de la ligne.
+            pastilles += '<em class="sans-score">cotes seules</em>'
         morts = ligne.get("morts") or []
         if morts:
             # Deux noms au plus, puis un compte : trois noms passaient a la

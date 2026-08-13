@@ -242,3 +242,91 @@ def test_le_cash_out_PRIME_sur_l_engagement_quand_il_existe():
     cellule = html.split('<span class="position">')[2].split("</span></span>")[0]
     assert "-179" in cellule
     assert "45" not in cellule
+
+
+# ── Les lignes SANS aucune source de score ───────────────────────────────
+#
+# Signale le 2026-08-13 : « pourquoi on n'a pas les matchs de Hambourg ? ».
+# Ils ETAIENT a l'ecran -- mais sans score, sans jeux, et donc invisibles a
+# l'oeil qui cherche un match.
+#
+# Fixture PRELEVEE : Nedic / Taberner et Rehberg / Purtseladze, Hamburg
+# Challenger, publies en `exchange_seul` le 2026-08-13. Aucune des trois
+# sources de score ne les couvre -- l'API n'a livre que Cincinnati, Astana,
+# Toronto et Montreal ce jour-la, le canal OrbitX ne pousse rien pour eux, et
+# le capteur WS est en veille depuis le matin.
+
+
+def _match_cotes_seules(**surcharges):
+    base = {
+        "event_id": "prod:hbg1", "id_market": "1.261047794",
+        "participant1": "Andrej Nedic", "participant2": "Carlos Taberner",
+        "score": None, "points": None, "source_score": "exchange_seul",
+        "back_odds_a": 2.58, "lay_odds_a": 2.64,
+        "back_odds_b": 1.57, "lay_odds_b": 1.60,
+        "league": "Hamburg Challenger", "tour_type": "atp",
+        "start_timestamp": 1786449600.0, "updated_ts": 1786449600.0,
+        "age_score_s": 2.0, "age_exchange_s": 2.0,
+    }
+    base.update(surcharges)
+    return base
+
+
+def test_la_pastille_de_score_ne_dit_PAS_frais_sans_source_de_score():
+    """LE DEFAUT LE PLUS GRAVE DES DEUX, parce qu'il MENT.
+
+    `age_score_s` vaut 2 s sur ces lignes -- l'age du cycle de publication,
+    pas celui d'un score. La pastille annoncait donc « frais » pour un match
+    dont AUCUNE source ne donne le score. Une pastille verte sur une absence
+    est pire qu'une pastille absente : elle affirme.
+
+    « inconnu » est le vocabulaire deja employe par cette liste pour un flux
+    dont on ne sait rien.
+    """
+    from liste_dense import etat_fraicheur
+
+    etats = {f["flux"]: f["etat"]
+             for f in etat_fraicheur(_match_cotes_seules(), 1786449600.0)}
+    assert etats["f_score"] == "inconnu", etats
+    # L'exchange, lui, alimente REELLEMENT cette ligne : sa pastille reste.
+    assert etats["f_exchange"] == "frais"
+
+
+def test_une_ligne_sans_source_de_score_le_DIT():
+    """Un tiret muet se lit comme un defaut d'affichage. La ligne doit dire
+    ce qu'elle est : un match reel, dont on n'a que les cotes."""
+    import pandas as pd
+
+    from liste_dense import lignes, rendu
+
+    html = rendu(lignes(pd.DataFrame([_match_cotes_seules()]),
+                        maintenant=1786449600.0))
+    assert "cotes seules" in html
+
+
+def test_une_ligne_AVEC_un_score_ne_porte_NI_marqueur_NI_pastille_inconnue():
+    """LE CAS DISCRIMINANT. Sans lui, marquer toutes les lignes passerait le
+    test precedent et rendrait le marqueur muet."""
+    import pandas as pd
+
+    from liste_dense import etat_fraicheur, lignes, rendu
+
+    avec = _match_cotes_seules(source_score="union", score="6-4, 3-2",
+                               points="30-15")
+    etats = {f["flux"]: f["etat"] for f in etat_fraicheur(avec, 1786449600.0)}
+    assert etats["f_score"] == "frais"
+    html = rendu(lignes(pd.DataFrame([avec]), maintenant=1786449600.0))
+    assert "cotes seules" not in html
+
+
+def test_le_marqueur_suit_la_SOURCE_et_non_l_absence_de_score():
+    """Un match qui n'a pas encore de score mais dont une source EXISTE
+    (premier jeu, l'API l'annonce sans score) ne doit pas etre marque : la
+    source est la, elle n'a simplement rien a dire encore."""
+    import pandas as pd
+
+    from liste_dense import lignes, rendu
+
+    html = rendu(lignes(pd.DataFrame([_match_cotes_seules(source_score="union")]),
+                        maintenant=1786449600.0))
+    assert "cotes seules" not in html
