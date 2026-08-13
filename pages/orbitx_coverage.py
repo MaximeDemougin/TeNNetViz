@@ -5,6 +5,11 @@ Liste les joueurs (ATP/WTA) ayant joué des matchs depuis une date choisie
 sans qu'aucun de leurs matchs n'apparaisse dans `betfair_links`. La période
 n'est plus une année civile : « à partir du » permet de demander « et
 depuis juin ? » sans être renvoyé au 1er janvier.
+
+La liste est bornée au PÉRIMÈTRE de `orbit_search` : un match sans cotes,
+sans prédiction, en Davis Cup WG I ou programmé au-delà de NOW()+3h n'a
+jamais été cherché, et le compter comme introuvable reproche à OrbitX un
+travail qu'on ne lui a pas demandé.
 """
 
 from __future__ import annotations
@@ -14,7 +19,10 @@ import datetime as _dt
 import pandas as pd
 import streamlit as st
 
-from data import load_players_betfair_coverage
+from data import (
+    load_orbit_search_out_of_scope_count,
+    load_players_betfair_coverage,
+)
 
 
 st.set_page_config(
@@ -62,6 +70,16 @@ with col3:
 
 with st.spinner("Chargement..."):
     df = load_players_betfair_coverage(start_date)
+    hors_perimetre = load_orbit_search_out_of_scope_count(start_date)
+
+# La page RESTREINT sa liste au périmètre du job : elle doit le dire, et dire
+# de combien. Passer de 159 « jamais trouvés » à 80 sans un mot laisserait
+# croire que la couverture s'est améliorée.
+st.caption(
+    f"Limité au périmètre `orbit_search` : {hors_perimetre} match(s) de la période "
+    "en sont exclus — sans cotes, sans prédiction, Davis Cup WG I, ou programmés "
+    "dans plus de 3 h."
+)
 
 if df is None or df.empty:
     st.warning(f"Aucune donnée disponible depuis le {start_label}.")

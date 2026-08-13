@@ -700,6 +700,39 @@ def load_future_matchs_missing_betfair(within_minutes: int = 60):
     return df
 
 
+#: Le perimetre de `orbit_search` (TeNNetPy/Prod/Bet_auto/TeNNet-orbit_search.py,
+#: via `get_data_to_bet`). Le job ne cherche un lien OrbitX que pour un match qui
+#: a des cotes ET une prediction, hors Davis Cup World Group I, et dont l'heure
+#: tombe avant NOW()+3h -- la borne haute de sa fenetre. Un match hors de ce
+#: perimetre n'a JAMAIS ete cherche : le compter comme « jamais trouve » reproche
+#: a OrbitX un travail qu'on ne lui a pas demande. C'etait la moitie de la liste
+#: depuis janvier, les deux tiers depuis juin.
+#:
+#: Une seule constante pour les quatre branches du UNION : ecrite quatre fois,
+#: une seule pourrait perdre sa borne sans que le total le montre.
+_PORTEE_ORBIT_SEARCH = """
+            AND EXISTS (SELECT 1 FROM odds o WHERE o.id = m.ID_MATCH)
+            AND EXISTS (SELECT 1 FROM predictions p WHERE p.ID_MATCH = m.ID_MATCH)
+            AND m.tourney_name NOT LIKE :hors_perimetre
+            AND m.tourney_date <= DATE_ADD(NOW(), INTERVAL 3 HOUR)"""
+
+#: La negation du perimetre, pour COMPTER ce qui en sort. Ecrite a part et non
+#: derivee par un NOT(...) global : `tourney_name NOT LIKE` rend NULL sur un nom
+#: NULL, et un NOT(NULL) ne compte rien -- les deux requetes cesseraient d'etre
+#: complementaires.
+_HORS_PORTEE_ORBIT_SEARCH = """
+            AND (
+                NOT EXISTS (SELECT 1 FROM odds o WHERE o.id = m.ID_MATCH)
+                OR NOT EXISTS (SELECT 1 FROM predictions p WHERE p.ID_MATCH = m.ID_MATCH)
+                OR m.tourney_name LIKE :hors_perimetre
+                OR m.tourney_date > DATE_ADD(NOW(), INTERVAL 3 HOUR)
+            )"""
+
+#: Lie, jamais interpole : un `%` dans le texte SQL est a la merci du paramstyle
+#: du pilote -- c'est pourquoi l'amont doit l'ecrire `I%%`.
+_MOTIF_HORS_PERIMETRE = "Davis Cup - World Group I%"
+
+
 @st.cache_data(ttl=DATA_CACHE_TTL_FUTURE, show_spinner=False)
 def load_players_betfair_coverage(start_date: _dt.date):
     """For every singles player (ATP + WTA) appearing in matches played on or
@@ -709,10 +742,12 @@ def load_players_betfair_coverage(start_date: _dt.date):
     ``tourney_date`` is a DATETIME, so comparing it to the ISO day takes that
     whole day, from midnight -- « a partir du 1er juin » includes June 1st.
 
-    Doubles are intentionally excluded (4 players per match, less actionable).
+    Only matches within ``orbit_search``'s own scope are counted -- see
+    ``_PORTEE_ORBIT_SEARCH``. Doubles are intentionally excluded (4 players per
+    match, less actionable), even though the job does search them.
     """
     start_iso = pd.Timestamp(start_date).strftime("%Y-%m-%d")
-    query = """
+    query = f"""
         SELECT compet, player,
                COUNT(*) AS total_matches,
                SUM(CASE WHEN bl_id IS NOT NULL THEN 1 ELSE 0 END) AS found_matches,
@@ -721,28 +756,35 @@ def load_players_betfair_coverage(start_date: _dt.date):
             SELECT 'atp' AS compet, m.winner_name AS player, m.ID_MATCH AS mid, bl.ID_MATCH AS bl_id
             FROM men_matchs m
             LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
-            WHERE m.tourney_date >= :start_date
+            WHERE m.tourney_date >= :start_date{_PORTEE_ORBIT_SEARCH}
             UNION ALL
             SELECT 'atp', m.loser_name, m.ID_MATCH, bl.ID_MATCH
             FROM men_matchs m
             LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
-            WHERE m.tourney_date >= :start_date
+            WHERE m.tourney_date >= :start_date{_PORTEE_ORBIT_SEARCH}
             UNION ALL
             SELECT 'wta', m.winner_name, m.ID_MATCH, bl.ID_MATCH
             FROM women_matchs m
             LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
-            WHERE m.tourney_date >= :start_date
+            WHERE m.tourney_date >= :start_date{_PORTEE_ORBIT_SEARCH}
             UNION ALL
             SELECT 'wta', m.loser_name, m.ID_MATCH, bl.ID_MATCH
             FROM women_matchs m
             LEFT JOIN Betfair_links bl ON m.ID_MATCH = bl.ID_MATCH
-            WHERE m.tourney_date >= :start_date
+            WHERE m.tourney_date >= :start_date{_PORTEE_ORBIT_SEARCH}
         ) p
         WHERE player IS NOT NULL AND player <> ''
         GROUP BY compet, player
     """
     try:
-        df = read_sql_query(BDD, query, params={"start_date": start_iso})
+        df = read_sql_query(
+            BDD,
+            query,
+            params={
+                "start_date": start_iso,
+                "hors_perimetre": _MOTIF_HORS_PERIMETRE,
+            },
+        )
     except Exception:
         logger.exception("load_players_betfair_coverage: failed")
         return pd.DataFrame()
@@ -758,6 +800,49 @@ def load_players_betfair_coverage(start_date: _dt.date):
     return df.sort_values(
         ["found_matches", "total_matches"], ascending=[True, False]
     ).reset_index(drop=True)
+
+
+@st.cache_data(ttl=DATA_CACHE_TTL_FUTURE, show_spinner=False)
+def load_orbit_search_out_of_scope_count(start_date: _dt.date) -> int:
+    """How many singles matches since ``start_date`` ``orbit_search`` never had
+    to look for: no odds, no prediction, Davis Cup World Group I, or scheduled
+    beyond the +3h edge of its window.
+
+    The page shows this so that restricting the coverage list does not silently
+    shrink it -- a list that drops from 159 to 80 without saying why claims a
+    coverage it quietly re-cut.
+    """
+    start_iso = pd.Timestamp(start_date).strftime("%Y-%m-%d")
+    query = f"""
+        SELECT SUM(hors) AS hors FROM (
+            SELECT COUNT(*) AS hors
+            FROM men_matchs m
+            WHERE m.tourney_date >= :start_date{_HORS_PORTEE_ORBIT_SEARCH}
+            UNION ALL
+            SELECT COUNT(*)
+            FROM women_matchs m
+            WHERE m.tourney_date >= :start_date{_HORS_PORTEE_ORBIT_SEARCH}
+        ) t
+    """
+    try:
+        df = read_sql_query(
+            BDD,
+            query,
+            params={
+                "start_date": start_iso,
+                "hors_perimetre": _MOTIF_HORS_PERIMETRE,
+            },
+        )
+    except Exception:
+        logger.exception("load_orbit_search_out_of_scope_count: failed")
+        return 0
+
+    if df is None or df.empty or "hors" not in df.columns:
+        return 0
+    # `SUM(...)` sur zero ligne rend NULL, pas 0 -- sans quoi la legende
+    # afficherait « nan match(s) hors perimetre ».
+    hors = pd.to_numeric(df["hors"].iloc[0], errors="coerce")
+    return 0 if pd.isna(hors) else int(hors)
 
 
 _FEATURES_TABLE_BY_COMPET = {
