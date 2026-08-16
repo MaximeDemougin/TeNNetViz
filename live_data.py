@@ -1435,6 +1435,45 @@ def competition(tour_type, league) -> str:
     return circuit
 
 
+def nom_tournoi(league) -> str:
+    """Le tournoi, tel qu'on veut le LIRE dans une liste dense.
+
+    Depuis la bascule du flux de score sur Goalserve (2026-08-16), les
+    categories s'appellent « Challenger Men - Singles: Roehampton (United
+    Kingdom) - Qualification, Hard ». La famille est DEJA portee par la
+    colonne de competition, le pays n'apprend rien, et la ligne devient
+    illisible. On garde la ville, la surface, et deux marqueurs.
+
+    CES DEUX MARQUEURS NE SONT PAS COSMETIQUES.
+
+    « Qualification » reste : un tableau de qualification n'a le plus souvent
+    AUCUN marche en face -- mesure du 2026-08-16, zero occurrence chez OrbitX
+    pour les qualifs de Sion -- et le confondre avec le tableau final ferait
+    chercher des cotes qui n'existent pas.
+
+    « Doubles » reste : sans lui, le double de Todi et le simple de Todi
+    s'affichent a l'identique.
+
+    Un libelle d'une AUTRE forme est rendu tel quel. « Astana Challenger »
+    est la nomenclature de la source precedente, et elle vit encore dans les
+    lignes de moins de sept jours : on ne devine pas.
+    """
+    texte = str(league or "").strip()
+    if ":" not in texte:
+        return texte
+    famille, _, reste = texte.partition(":")
+    while "(" in reste and ")" in reste:
+        avant, _, apres = reste.partition("(")
+        _, _, apres = apres.partition(")")
+        reste = f"{avant.strip()} {apres.strip()}"
+    reste = " ".join(reste.split()).replace(" ,", ",").strip()
+    if not reste:
+        return texte
+    if "doubles" in famille.lower():
+        reste = f"{reste} (doubles)"
+    return reste
+
+
 def a_joue(score, points, cotes_bougent: bool = False) -> bool:
     """Vrai des qu'au moins un point a ete joue, OU que le marche est suivi.
 

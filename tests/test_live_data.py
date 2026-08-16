@@ -1895,3 +1895,44 @@ def test_AUCUN_epoch_ne_devient_une_heure_sans_passer_par_PARIS():
         "un epoch devient une heure sans passer par `utils.to_paris`, donc "
         "s'affiche en UTC :\n  " + "\n  ".join(coupables)
     )
+
+
+def test_le_nom_de_tournoi_se_lit_dans_une_liste_DENSE():
+    """Libelles REELS de `live_now` et de la capture du 2026-08-16.
+
+    Goalserve nomme ses categories « Challenger Men - Singles: Roehampton
+    (United Kingdom) - Qualification, Hard ». La famille est deja portee par
+    la colonne de competition, le pays n'apprend rien, et la ligne devient
+    illisible dans une liste dense.
+    """
+    from live_data import nom_tournoi
+    assert nom_tournoi("Atp - Singles: Cincinnati (Usa), Hard") == "Cincinnati, Hard"
+    assert nom_tournoi(
+        "Challenger Men - Singles: Astana (Kazakhstan), Hard") == "Astana, Hard"
+
+
+def test_le_nom_de_tournoi_GARDE_la_qualification_et_le_double():
+    """Deux marqueurs qui ne sont pas cosmetiques.
+
+    Un tableau de QUALIFICATION n'a le plus souvent aucun marche en face --
+    mesure du 2026-08-16 : zero occurrence chez OrbitX pour les qualifs de
+    Sion. Le confondre avec le tableau final ferait chercher des cotes qui
+    n'existent pas. Et sans le marqueur DOUBLE, le double de Todi et le
+    simple de Todi s'affichent a l'identique.
+    """
+    from live_data import nom_tournoi
+    assert nom_tournoi(
+        "Challenger Men - Singles: Sion (Switzerland) - Qualification, Clay"
+    ) == "Sion - Qualification, Clay"
+    assert nom_tournoi(
+        "Challenger Men - Doubles: Todi (Italy), Clay") == "Todi, Clay (doubles)"
+
+
+def test_un_libelle_d_UNE_AUTRE_FORME_est_rendu_tel_quel():
+    """« Astana Challenger » est la nomenclature de la source PRECEDENTE.
+    Elle vit encore dans les lignes de moins de sept jours : on ne devine
+    pas, on rend tel quel."""
+    from live_data import nom_tournoi
+    assert nom_tournoi("Astana Challenger") == "Astana Challenger"
+    assert nom_tournoi("") == ""
+    assert nom_tournoi(None) == ""

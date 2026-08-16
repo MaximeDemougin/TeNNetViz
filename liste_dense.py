@@ -23,6 +23,7 @@ from live_data import (
     competition,
     ecart_en_ticks,
     fraicheur,
+    nom_tournoi,
 )
 from utils import to_paris
 
@@ -639,7 +640,7 @@ def lignes(df, maintenant: float, mouvements=None, positions=None) -> list:
             "event_ids": str(m.get("event_ids") or m.get("event_id") or ""),
             "debut": m.get("start_timestamp"),
             "competition": competition(m.get("tour_type"), m.get("league")),
-            "tournoi": str(m.get("league") or ""),
+            "tournoi": nom_tournoi(m.get("league")),
             "joueurs": [
                 {"nom": str(m.get("participant1") or "?"), "sert": srv == "0",
                  "jeux": ja, "point": pts[0] if len(pts) > 0 else "",
