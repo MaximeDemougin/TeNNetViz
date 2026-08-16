@@ -91,6 +91,36 @@ def test_le_cote_du_pari_se_lit_sur_les_CAS_REELS():
                         "Mukund Sasikumar") == "b"
 
 
+def test_le_PRENOM_ABREGE_de_Goalserve_ne_detache_pas_le_pari():
+    """Les QUATRE paris du 2026-08-16, releves dans `Bet`, contre les
+    participants tels que `live_now` les portait ce jour-la.
+
+    Le flux de score est passe a Goalserve, qui abrege les prenoms
+    (« G. Perego ») la ou la source precedente les ecrivait en entier
+    (« Giulio Perego »). Le point de l'initiale restait colle au jeton :
+    « g. » ne prefixe pas « giulio », `cote_du_pari` rendait None, et les
+    quatre paris tombaient dans les NON RATTACHES -- la fenetre de detail
+    n'affichait aucune position. Panne CONSTATEE EN PRODUCTION, signalee par
+    le proprietaire du compte.
+    """
+    assert cote_du_pari("Giulio Perego", "F. Peliwo", "G. Perego") == "b"
+    assert cote_du_pari("Peter Makk", "P. Makk", "R. Jones") == "a"
+    assert cote_du_pari("Matt Ponchet", "M. Walters", "M. Ponchet") == "b"
+    assert cote_du_pari("Andrew Paulson", "D. Recek", "A. Paulson") == "b"
+
+
+def test_retirer_le_point_de_l_initiale_ne_RELACHE_pas_le_filtre():
+    """Le patronyme doit toujours prefixer un jeton de la selection.
+
+    Sans ce controle, retirer le point pourrait faire designer n'importe qui
+    par sa seule initiale -- « M. Walters » et « M. Ponchet » partagent la
+    leur, et c'est precisement le cas qui se presente dans le tableau de
+    Roehampton du 2026-08-16.
+    """
+    assert cote_du_pari("Matt Ponchet", "M. Walters", "X. Dupont") is None
+    assert cote_du_pari("Giulio Perego", "G. Petrov", "H. Ivanov") is None
+
+
 def test_un_ACCENT_ne_fait_pas_perdre_le_pari():
     """Marche 1.260661227, trois lay reels : le pari dit « Kellovský », la
     source des participants dit « Kellovsky ». Mesure du 2026-08-11 :

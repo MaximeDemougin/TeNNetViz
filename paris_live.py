@@ -105,10 +105,25 @@ def _jetons(nom) -> list[str]:
     affiche tel quel) doit rendre DEUX jetons. `split()` sans argument s'en
     charge ; `split(" ")` rendrait un jeton VIDE, et un jeton vide prefixe
     n'importe quoi -- il designerait alors les deux joueurs.
+
+    LE POINT D'UNE INITIALE EST RETIRE -- corrige le 2026-08-16, sur une
+    panne EN PRODUCTION. « G. Perego » rendait ["g.", "perego"], et « g. »
+    ne prefixe pas « giulio » : `cote_du_pari` rendait None, le pari tombait
+    dans les NON RATTACHES et la fenetre de detail n'affichait aucune
+    position. Les QUATRE paris de la journee etaient concernes. La cause est
+    le passage du flux de score a Goalserve, qui abrege les prenoms
+    (« G. Perego ») la ou la source precedente les ecrivait en entier
+    (« Giulio Perego »).
+
+    Retirer le point ne relache pas le filtre : « g » doit toujours prefixer
+    un jeton DISTINCT de la selection, et le patronyme doit prefixer l'autre.
+    « Matt Ponchet » contre le participant « M. Walters » reste faux, parce
+    que « walters » ne prefixe rien.
     """
     if not nom:
         return []
-    return _sans_accents(nom).lower().split()
+    return [j for j in (m.strip(".")
+                        for m in _sans_accents(nom).lower().split()) if j]
 
 
 def _designe(selection, participant) -> bool:
