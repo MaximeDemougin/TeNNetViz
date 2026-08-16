@@ -336,6 +336,29 @@ def _prepare_bets_data_cached(user_id: int, finished: bool):
     else:
         # Same mirroring for in-play bets: a back wager points to the opposite
         # selection compared to the lay encoding.
+        #
+        # ⚠️ CHOIX D'AFFICHAGE DÉLIBÉRÉ, ne pas « corriger ». Pour un LAY,
+        # ``player_bet`` nomme l'ADVERSAIRE du runner que porte ``Bet.bet`` —
+        # le joueur sur qui on parie économiquement, puisque layer Li revient
+        # à backer Kulambayeva. La colonne « Cote » suit la même logique :
+        # c'est ``real_odds``, la cote back-équivalente (1/(lay−1)×0,97+1),
+        # et non la cote de lay réellement posée.
+        #
+        # CETTE CONVENTION EST L'INVERSE DE CELLE DE LA BASE. Là-bas,
+        # ``Bet.bet`` (0=home/1=away), ``Bet.bet_libelle`` et
+        # ``Bet_analytics.player_name`` nomment tous le runner LAYÉ — invariant
+        # rétabli côté TeNNetPy le 12/08/2026 (``runner_name_for_side``),
+        # précisément parce qu'il était violé.
+        #
+        # À connaître avant de crier au bug : à l'écran, les mises paraissent
+        # interverties entre les deux joueurs par rapport à la base. Exemple
+        # réel, match dbDS2o6b — base : lay Zongyu Li @3,25 pour 44,28 € de
+        # liability ; écran : « Pari sur Kulambayeva Z. — 44,28 € @1,431 ».
+        # Les deux décrivent la même position, et les gains affichés sont
+        # justes au centime.
+        #
+        # Le choix est assumé : une cote back-équivalente se compare entre
+        # paris back et lay, ce qu'une cote de lay ne permet pas.
         base_sel = bets_data["bet"] == 1
         bet_sel = np.where(is_back, ~base_sel, base_sel)
         bets_data["cote_pred"] = np.where(
